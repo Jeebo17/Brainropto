@@ -4,6 +4,7 @@ import { Home } from './pages/Home';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
 import WebCamMotionTrackerPage from './pages/WebCamMotionTracker';
+import Help from './pages/Help';
 import BrainrotAttack from './components/BrainrotAttack';
 
 
@@ -32,10 +33,18 @@ function App() {
               Settings
             </Link>
             <Link
+
               to="/webcam-motion-tracker"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
             >
               Webcam Motion Tracker
+            </Link>
+            <Link
+              to="/help"
+              className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
+            >
+              Help
+
             </Link>
           </nav>
         </div>
@@ -47,6 +56,7 @@ function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/webcam-motion-tracker" element={<WebCamMotionTrackerPage />} />
         <Route path="*" element={<NotFound />} />
+        <Route path="/help" element={<Help />} />
       </Routes>
     </div>
   );
