@@ -311,8 +311,8 @@ export function WebcamDetector() {
   }, [isSharing, drawResults, handleStopSharing]);
 
   return (
-    <div className="order-2 flex w-full lg:w-4/5 flex-col gap-4 p-4 bg-white rounded-lg shadow-lg">
-      <div ref={playerShellRef} className="relative w-full overflow-hidden rounded-lg bg-black" style={{ aspectRatio: '16 / 9' }}>
+    <div className="order-2 flex h-full w-full flex-col gap-4 p-4 bg-[#061126] border border-[#1a2d4a] rounded-lg shadow-lg overflow-auto text-slate-100">
+      <div ref={playerShellRef} className="relative w-full overflow-hidden rounded-lg bg-[#050b1a] border border-[#1a2d4a]" style={{ aspectRatio: '16 / 9' }}>
         {panoptoEmbedUrl ? (
           <iframe
             ref={iframeRef}
@@ -323,7 +323,7 @@ export function WebcamDetector() {
             allow="autoplay"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-gray-400">
+          <div className="flex h-full w-full items-center justify-center text-slate-400">
             <p className="text-lg">Paste a Panopto link above to load a lecture</p>
           </div>
         )}
@@ -342,16 +342,16 @@ export function WebcamDetector() {
         className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
       />
 
-      <div className="rounded-lg border border-gray-200 p-3">
+      <div className="rounded-lg border border-[#1a2d4a] bg-[#0a1933] p-3">
         {!isAuthenticated ? (
           <>
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-slate-200">
               Log in with your University of Bath Panopto account to enable hand tracking.
             </p>
             <div className="mt-3">
               <a
                 href={`${API_BASE}/auth/login`}
-                className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                className="inline-block rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
               >
                 Login with Panopto
               </a>
@@ -359,7 +359,7 @@ export function WebcamDetector() {
           </>
         ) : (
           <>
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-slate-200">
               Paste a Panopto lecture link, then click "Start Capture" to share this tab.
               MediaPipe will crop to the player area and detect hands.
             </p>
@@ -369,12 +369,12 @@ export function WebcamDetector() {
                 value={sessionInput}
                 onChange={(e) => setSessionInput(e.target.value)}
                 placeholder="https://uniofbath.cloud.panopto.eu/...?id=xxxx or session GUID"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+                className="w-full rounded-md border border-[#1a2d4a] bg-[#061126] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400"
               />
               <button
                 type="button"
                 onClick={handleLoadSession}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                className="rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
               >
                 Load
               </button>
@@ -383,7 +383,7 @@ export function WebcamDetector() {
                   type="button"
                   onClick={handleStartCapture}
                   disabled={!sessionId}
-                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  className="rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71] disabled:opacity-50"
                 >
                   Start Capture
                 </button>
@@ -391,7 +391,7 @@ export function WebcamDetector() {
                 <button
                   type="button"
                   onClick={handleStopSharing}
-                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                  className="rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
                 >
                   Stop Capture
                 </button>
@@ -401,7 +401,7 @@ export function WebcamDetector() {
         )}
       </div>
 
-      <div className="rounded-lg bg-gray-100 p-3 text-sm text-gray-800">
+      <div className="rounded-lg border border-[#1a2d4a] bg-[#0a1933] p-3 text-sm text-slate-100">
         <p>
           <span className="font-semibold">Status:</span> {statusText}
         </p>
