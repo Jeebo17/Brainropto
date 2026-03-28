@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Hands, Results } from '@mediapipe/hands';
 
-interface WebcamDetectorProps {
-  videoUrl?: string;
-}
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 
 type HandPoint = {
   x: number;
@@ -11,7 +9,14 @@ type HandPoint = {
   z: number;
 };
 
-export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
+// Extract session ID from a Panopto URL or bare GUID
+function extractSessionId(input: string): string | null {
+  const guidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const match = input.match(guidPattern);
+  return match ? match[0] : null;
+}
+
+export function WebcamDetector() {
   const analysisVideoRef = useRef<HTMLVideoElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -22,26 +27,22 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
   const panoptoTimeRef = useRef<number | null>(null);
   const panoptoPlayingRef = useRef(false);
 
-  const [analysisVideoInput, setAnalysisVideoInput] = useState(videoUrl ?? '');
-  const [analysisVideoUrl, setAnalysisVideoUrl] = useState<string | null>(videoUrl ?? null);
+  const [sessionInput, setSessionInput] = useState('');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [analysisVideoUrl, setAnalysisVideoUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [handPosition, setHandPosition] = useState<HandPoint | null>(null);
   const [statusText, setStatusText] = useState(
-    'Paste a direct video URL, then use Sync to overlay hand boxes onto Panopto playback.'
+    'Paste a Panopto link or session ID to load the lecture.'
   );
   const [panoptoTime, setPanoptoTime] = useState<number | null>(null);
   const [panoptoPlaying, setPanoptoPlaying] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(true);
 
-  const panoptoEmbedUrl =
-    'https://uniofbath.cloud.panopto.eu/Panopto/Pages/Embed.aspx?id=c9334aea-2bc3-4f20-abf6-b40900ec1c02&autoplay=false&offerviewer=true&showtitle=false&showbrand=false&captions=false&interactivity=all';
-
-  useEffect(() => {
-    if (videoUrl) {
-      setAnalysisVideoInput(videoUrl);
-      setAnalysisVideoUrl(videoUrl);
-    }
-  }, [videoUrl]);
+  const panoptoEmbedUrl = sessionId
+    ? `https://uniofbath.cloud.panopto.eu/Panopto/Pages/Embed.aspx?id=${sessionId}&autoplay=false&offerviewer=true&showtitle=false&showbrand=false&captions=false&interactivity=all`
+    : null;
 
   const syncCanvasToPlayerSize = () => {
     const shell = playerShellRef.current;
@@ -112,10 +113,7 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
     const onResize = () => syncCanvasToPlayerSize();
     onResize();
     window.addEventListener('resize', onResize);
-
-    return () => {
-      window.removeEventListener('resize', onResize);
-    };
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   useEffect(() => {
@@ -163,9 +161,7 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
     };
 
     window.addEventListener('message', handlePanoptoMessage);
-    return () => {
-      window.removeEventListener('message', handlePanoptoMessage);
-    };
+    return () => window.removeEventListener('message', handlePanoptoMessage);
   }, []);
 
   const requestPanoptoSyncEvents = () => {
@@ -180,6 +176,45 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
     frame.postMessage({ method: 'addEventListener', event: 'pause' }, '*');
   };
 
+  // Fetch video URL from backend when session ID changes
+  const handleLoadSession = async () => {
+    const id = extractSessionId(sessionInput.trim());
+    if (!id) {
+      setStatusText('Could not find a valid session ID. Paste a Panopto link or GUID.');
+      return;
+    }
+
+    setSessionId(id);
+    setIsLoading(true);
+    setStatusText('Fetching video URL from Panopto API...');
+
+    try {
+      const res = await fetch(`${API_BASE}/api/video/${id}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStatusText(`API error: ${data.error || 'Unknown error'}`);
+        setIsLoading(false);
+        return;
+      }
+
+      setAnalysisVideoUrl(data.videoUrl);
+      setStatusText('Video loaded. Tracker starting...');
+
+      // Auto-start the hidden tracker video (allowed because this runs from a click handler)
+      requestAnimationFrame(() => {
+        analysisVideoRef.current?.play()
+          .then(() => setStatusText('Tracker running. Overlay is synced to Panopto time.'))
+          .catch(() => setStatusText('Autoplay blocked — click Start Tracker manually.'));
+      });
+    } catch (err) {
+      setStatusText(`Failed to connect to server: ${(err as Error).message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // MediaPipe analysis loop
   useEffect(() => {
     const video = analysisVideoRef.current;
     if (!video || !analysisVideoUrl) {
@@ -202,7 +237,6 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
 
     hands.onResults(drawResults);
     handsRef.current = hands;
-    setStatusText('Hidden tracker loaded. Start Panopto playback to sync overlay.');
 
     const loop = async () => {
       if (cancelled || !analysisVideoRef.current || !handsRef.current) return;
@@ -260,20 +294,6 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
     };
   }, [analysisVideoUrl, syncEnabled]);
 
-  const handleLoadUrl = () => {
-    const nextUrl = analysisVideoInput.trim();
-    if (!nextUrl) {
-      setAnalysisVideoUrl(null);
-      setHandPosition(null);
-      setStatusText('Paste a direct video URL, then load it for hidden tracking.');
-      return;
-    }
-
-    setAnalysisVideoUrl(nextUrl);
-    setHandPosition(null);
-    setStatusText('Tracker URL loaded. Use Start Tracker and play Panopto.');
-  };
-
   const handleStartTracker = async () => {
     if (!analysisVideoRef.current) return;
     try {
@@ -286,43 +306,51 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
 
   return (
     <div className="order-2 flex w-full lg:w-4/5 flex-col gap-4 p-4 bg-white rounded-lg shadow-lg">
-      <div ref={playerShellRef} className="relative w-full overflow-hidden rounded-lg" style={{ aspectRatio: '16 / 9' }}>
-        <iframe
-          ref={iframeRef}
-          src={panoptoEmbedUrl}
-          title="Panopto Lecture Recording"
-          className="h-full w-full"
-          allowFullScreen
-          allow="autoplay"
-          onLoad={requestPanoptoSyncEvents}
-        />
+      <div ref={playerShellRef} className="relative w-full overflow-hidden rounded-lg bg-black" style={{ aspectRatio: '16 / 9' }}>
+        {panoptoEmbedUrl ? (
+          <iframe
+            ref={iframeRef}
+            src={panoptoEmbedUrl}
+            title="Panopto Lecture Recording"
+            className="h-full w-full"
+            allowFullScreen
+            allow="autoplay"
+            onLoad={requestPanoptoSyncEvents}
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-gray-400">
+            <p className="text-lg">Paste a Panopto link above to load a lecture</p>
+          </div>
+        )}
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
       </div>
 
       <div className="rounded-lg border border-gray-200 p-3">
         <p className="text-sm text-gray-700">
-          Sync mode: Panopto stays visible while MediaPipe runs on a hidden mirror stream and draws
-          boxes directly over the official player.
+          Paste a Panopto lecture link or session ID. The server will fetch the video via the
+          Panopto API for MediaPipe analysis while you watch the embedded player.
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
-            type="url"
-            value={analysisVideoInput}
-            onChange={(event) => setAnalysisVideoInput(event.target.value)}
-            placeholder="https://example.com/lecture.mp4"
+            type="text"
+            value={sessionInput}
+            onChange={(e) => setSessionInput(e.target.value)}
+            placeholder="https://uniofbath.cloud.panopto.eu/...?id=xxxx or session GUID"
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
           />
           <button
             type="button"
-            onClick={handleLoadUrl}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            onClick={handleLoadSession}
+            disabled={isLoading}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            Load Mirror URL
+            {isLoading ? 'Loading...' : 'Load'}
           </button>
           <button
             type="button"
             onClick={handleStartTracker}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            disabled={!analysisVideoUrl}
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
           >
             Start Tracker
           </button>
@@ -331,7 +359,7 @@ export function WebcamDetector({ videoUrl }: WebcamDetectorProps) {
           <input
             type="checkbox"
             checked={syncEnabled}
-            onChange={(event) => setSyncEnabled(event.target.checked)}
+            onChange={(e) => setSyncEnabled(e.target.checked)}
           />
           Keep hidden tracker synced to Panopto timeline
         </label>
