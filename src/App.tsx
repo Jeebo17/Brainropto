@@ -7,7 +7,7 @@ import { NotFound } from './pages/NotFound';
 
 function App() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-100 via-white-100 to-blue-100">
+    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-white to-blue-100">
       <header className="bg-white shadow-md p-4">
         <div className="container mx-auto flex items-center gap-3">
           <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
