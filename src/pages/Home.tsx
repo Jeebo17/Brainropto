@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { VideoPlayer } from '../components/VideoPlayer';
 import { WebcamDetector } from '../components/WebcamDetector';
+import Menu from '../components/Menu';
+import Tile from '../components/Tile';
+import tileData from '../data/tileData.json';
 
 export function Home() {
     const [leftVideo, setLeftVideo] = useState<string | null>(null);
@@ -29,19 +31,22 @@ export function Home() {
     return (
         <main className="container mx-auto p-8">
             <div className="flex gap-6 items-start justify-center flex-wrap lg:flex-nowrap">
-                <VideoPlayer
+                {/* <VideoPlayer
                     position="left"
                     onVideoUpload={handleLeftVideoUpload}
                     videoUrl={leftVideo}
-                />
+                /> */}
 
                 <WebcamDetector />
 
-                <VideoPlayer
+                <Menu />
+                <Tile data={tileData.engagementVideos[1]} />
+
+                {/* <VideoPlayer
                     position="right"
                     onVideoUpload={handleRightVideoUpload}
                     videoUrl={rightVideo}
-                />
+                /> */}
             </div>
         </main>
     );
