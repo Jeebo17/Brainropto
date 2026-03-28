@@ -162,11 +162,11 @@ function detectGesture(
   return null;
 }
 
-interface VideoTrackerProps {
+interface WebcamDetectorProps {
   onGesture?: (gesture: GestureType) => void;
 }
 
-export function VideoTracker({ onGesture }: VideoTrackerProps) {
+export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const captureVideoRef = useRef<HTMLVideoElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const debugOverlayRef = useRef<HTMLCanvasElement>(null);
@@ -216,9 +216,9 @@ export function VideoTracker({ onGesture }: VideoTrackerProps) {
           },
           runningMode: 'VIDEO',
           numPoses: 1,
-          minPoseDetectionConfidence: 0.3,
-          minPosePresenceConfidence: 0.3,
-          minTrackingConfidence: 0.3,
+          minPoseDetectionConfidence: 0.1,
+          minPosePresenceConfidence: 0.1,
+          minTrackingConfidence: 0.1,
         });
         if (cancelled) {
           landmarker.close();
