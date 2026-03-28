@@ -37,6 +37,18 @@ export function WebcamDetector() {
     'Log in with Panopto to get started.'
   );
 
+  useEffect(() => {
+    const scheduleClang = () => {
+      const delay = (Math.random() * (10 - 3) + 3) * 60 * 1000;
+      return setTimeout(() => {
+        new Audio('/pipe.mp3').play();
+        scheduleClang();
+      }, delay);
+    };
+    const timeout = scheduleClang();
+    return () => clearTimeout(timeout);
+  }, []);
+
   // Check auth status on mount
   useEffect(() => {
     fetch(`${API_BASE}/auth/status`)
@@ -174,7 +186,7 @@ export function WebcamDetector() {
       setStatusText('Load a Panopto session first.');
       return;
     }
-
+    new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' } as MediaTrackConstraints,
@@ -418,6 +430,7 @@ export function WebcamDetector() {
             : 'Not detected'}
         </p>
       </div>
+
     </div>
   );
 }
