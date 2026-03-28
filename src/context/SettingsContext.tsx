@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 const PIPE_VOLUME_KEY = 'brainropto.pipeVolume';
 const PIPE_FREQUENCY_KEY = 'brainropto.pipeFrequency';
+const WAKEUP_DELAY_KEY = 'brainropto.wakeUpDelay';
 
 const DEFAULT_PIPE_VOLUME = 100;
 const DEFAULT_PIPE_FREQUENCY = 1000;
+const DEFAULT_WAKEUP_DELAY = 5;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
@@ -46,6 +48,8 @@ type SettingsContextValue = {
     setPipeVolume: (value: number) => void;
     pipeFrequency: number;
     setPipeFrequency: (value: number) => void;
+    wakeUpDelay: number;
+    setWakeUpDelay: (value: number) => void;
 };
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
@@ -54,13 +58,16 @@ type SettingsProviderProps = {
     children: ReactNode;
 };
 
+
 export function SettingsProvider({ children }: SettingsProviderProps) {
     const [pipeVolume, setPipeVolumeState] = useState<number>(() =>
         readStoredNumber(PIPE_VOLUME_KEY, DEFAULT_PIPE_VOLUME, 0, 100)
     );
-
     const [pipeFrequency, setPipeFrequencyState] = useState<number>(() =>
         readStoredNumber(PIPE_FREQUENCY_KEY, DEFAULT_PIPE_FREQUENCY, 1, 1000)
+    );
+    const [wakeUpDelay, setWakeUpDelayState] = useState<number>(() =>
+        readStoredNumber(WAKEUP_DELAY_KEY, DEFAULT_WAKEUP_DELAY, 1, 30)
     );
 
     const setPipeVolume = (value: number) => {
@@ -75,6 +82,12 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
         safeSetStoredNumber(PIPE_FREQUENCY_KEY, nextValue);
     };
 
+    const setWakeUpDelay = (value: number) => {
+        const nextValue = clamp(value, 1, 30);
+        setWakeUpDelayState(nextValue);
+        safeSetStoredNumber(WAKEUP_DELAY_KEY, nextValue);
+    };
+
     useEffect(() => {
         safeSetStoredNumber(PIPE_VOLUME_KEY, pipeVolume);
     }, [pipeVolume]);
@@ -83,14 +96,20 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
         safeSetStoredNumber(PIPE_FREQUENCY_KEY, pipeFrequency);
     }, [pipeFrequency]);
 
+    useEffect(() => {
+        safeSetStoredNumber(WAKEUP_DELAY_KEY, wakeUpDelay);
+    }, [wakeUpDelay]);
+
     const value = useMemo(
         () => ({
         pipeVolume,
         setPipeVolume,
         pipeFrequency,
         setPipeFrequency,
+        wakeUpDelay,
+        setWakeUpDelay,
         }),
-        [pipeVolume, pipeFrequency]
+        [pipeVolume, pipeFrequency, wakeUpDelay]
     );
 
     return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

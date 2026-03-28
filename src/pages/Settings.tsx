@@ -2,7 +2,7 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 
 export function Settings() {
-    const { pipeVolume, setPipeVolume, pipeFrequency, setPipeFrequency } = useSettings();
+    const { pipeVolume, setPipeVolume, pipeFrequency, setPipeFrequency, wakeUpDelay, setWakeUpDelay } = useSettings();
 
     return (
         <main className="container mx-auto p-8 text-slate-100 bg-[#061126] min-h-[calc(100vh-88px)]">
@@ -29,6 +29,7 @@ export function Settings() {
                         Pipe Settings
                     </label>
 
+
                     <div>
                         <label className="block text-lg font-semibold text-slate-200 mb-2">
                             Pipe Volume: <span className="text-blue-300">{pipeVolume}%</span>
@@ -41,6 +42,21 @@ export function Settings() {
                             onChange={(e) => setPipeVolume(Number(e.target.value))}
                             className="w-full accent-blue-400"
                         />
+                    </div>
+
+                    <div>
+                        <label className="block text-lg font-semibold text-slate-200 mb-2">
+                            WAKE UP Delay: <span className="text-blue-300">{wakeUpDelay}s</span>
+                        </label>
+                        <input
+                            type="range"
+                            min="1"
+                            max="30"
+                            value={wakeUpDelay}
+                            onChange={(e) => setWakeUpDelay(Number(e.target.value))}
+                            className="w-full accent-blue-400"
+                        />
+                        <span className="block text-xs text-slate-400 font-normal">How many seconds your eyes must be closed before WAKE UP triggers</span>
                     </div>
 
                     <div>

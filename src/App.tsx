@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
+import WebCamMotionTrackerPage from './pages/WebCamMotionTracker';
 import BrainrotAttack from './components/BrainrotAttack';
 
 
@@ -30,6 +31,12 @@ function App() {
             >
               Settings
             </Link>
+            <Link
+              to="/webcam-motion-tracker"
+              className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
+            >
+              Webcam Motion Tracker
+            </Link>
           </nav>
         </div>
       </header>
@@ -38,6 +45,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/webcam-motion-tracker" element={<WebCamMotionTrackerPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </div>
