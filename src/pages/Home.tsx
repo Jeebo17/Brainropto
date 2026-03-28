@@ -5,6 +5,7 @@ import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
 import tileData from '../data/tileData.json';
 import { TileType } from '../types/Types';
+import { WebCamMotionTracker } from '../components/WebCamMotionTracker';
 
 const TILE_DRAG_MIME = 'application/x-bathhack-tile';
 type SnapSide = 'left' | 'right';
@@ -167,7 +168,13 @@ export function Home() {
 
     return (
         <main className="w-full max-w-none h-[calc(100vh-88px)] bg-[#061126] text-slate-100">
+            {/* WebCamMotionTracker in bottom left */}
+            <div style={{ position: 'absolute', left: 0, bottom: 0, zIndex: 50 }}>
+                <WebCamMotionTracker small={true} />
+            </div>
+
             <div className="relative w-full h-full overflow-hidden">
+
                 {show67Indicator && (
                     <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none">
                         <div className="text-[38vw] leading-none font-black uppercase tracking-[-0.08em] text-red-500 drop-shadow-[0_0_30px_rgba(255,0,0,0.95)] animate-pulse select-none">

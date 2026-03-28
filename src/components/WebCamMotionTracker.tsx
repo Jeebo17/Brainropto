@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { FaceLandmarker, PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, PoseLandmarker, HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { useSettings } from '../context/SettingsContext';
 
-export function WebCamMotionTracker() {
+interface WebCamMotionTrackerProps {
+  small?: boolean;
+}
+
+export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
+    // Track hands-on-head state and timer
+    const handsOnHeadRef = useRef(false);
+    const handsOnHeadStartRef = useRef<number | null>(null);
+    const handsOnHeadPlayedRef = useRef(false);
   const { wakeUpDelay } = useSettings();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
+  const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const [modelReady, setModelReady] = useState(false);
   const [status, setStatus] = useState('Loading models...');
   const [isRunning, setIsRunning] = useState(false);
@@ -44,15 +53,26 @@ export function WebCamMotionTracker() {
           runningMode: 'VIDEO',
           numPoses: 1,
         });
+        const handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
+            delegate: 'GPU',
+          },
+          runningMode: 'VIDEO',
+          numHands: 2,
+        });
         if (cancelled) {
           faceLandmarker.close();
           poseLandmarker.close();
+          handLandmarker.close();
           return;
         }
         faceLandmarkerRef.current = faceLandmarker;
         poseLandmarkerRef.current = poseLandmarker;
+        handLandmarkerRef.current = handLandmarker;
         setModelReady(true);
-        setStatus('Models loaded. Click Start to begin.');
+        setStatus('Models loaded. Starting camera...');
       } catch (err) {
         setStatus('Failed to load models.');
       }
@@ -68,8 +88,20 @@ export function WebCamMotionTracker() {
         poseLandmarkerRef.current.close();
         poseLandmarkerRef.current = null;
       }
+      if (handLandmarkerRef.current) {
+        handLandmarkerRef.current.close();
+        handLandmarkerRef.current = null;
+      }
     };
   }, []);
+
+  // Auto-start camera when models are loaded
+  useEffect(() => {
+    if (modelReady && !isRunning) {
+      startCamera();
+    }
+    // Only run when modelReady or isRunning changes
+  }, [modelReady, isRunning]);
 
   const startCamera = async () => {
     if (!videoRef.current) return;
@@ -78,7 +110,7 @@ export function WebCamMotionTracker() {
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setIsRunning(true);
-      setStatus('Camera started.');
+      setStatus('');
     } catch (err) {
       setStatus('Failed to access webcam.');
     }
@@ -91,14 +123,20 @@ export function WebCamMotionTracker() {
     const canvas = canvasRef.current;
     const faceLandmarker = faceLandmarkerRef.current;
     const poseLandmarker = poseLandmarkerRef.current;
-    if (!video || !canvas || !faceLandmarker || !poseLandmarker) return;
+    const handLandmarker = handLandmarkerRef.current;
+    if (!video || !canvas || !faceLandmarker || !poseLandmarker || !handLandmarker) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Mirror the video horizontally for a natural selfie view
+      ctx.save();
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
       // Face mesh
       let eyesClosed = false;
       const faceResult = faceLandmarker.detectForVideo(video, performance.now());
@@ -106,14 +144,14 @@ export function WebCamMotionTracker() {
         for (const face of faceResult.faceLandmarks) {
           ctx.strokeStyle = '#60a5fa';
           ctx.lineWidth = 2;
-          // Draw points
+          // Draw points (mirrored)
           for (const pt of face) {
             ctx.beginPath();
-            ctx.arc(pt.x * canvas.width, pt.y * canvas.height, 2, 0, 2 * Math.PI);
+            ctx.arc((canvas.width - pt.x * canvas.width), pt.y * canvas.height, 2, 0, 2 * Math.PI);
             ctx.fillStyle = '#60a5fa';
             ctx.fill();
           }
-          // Draw mesh lines (simple connections for visibility)
+          // Draw mesh lines (mirrored)
           const connections = [
             [10, 338], [338, 297], [297, 332], [332, 284], [284, 251], [251, 389], [389, 356], [356, 454], [454, 323], [323, 361], [361, 288], [288, 397], [397, 365], [365, 379], [379, 378], [378, 400], [400, 377], [377, 152], [152, 148], [148, 176], [176, 149], [149, 150], [150, 136], [136, 172], [172, 58], [58, 132], [132, 93], [93, 234], [234, 127], [127, 162], [162, 21], [21, 54], [54, 103], [103, 67], [67, 109], [109, 10]
           ];
@@ -123,8 +161,8 @@ export function WebCamMotionTracker() {
           for (const [a, b] of connections) {
             if (face[a] && face[b]) {
               ctx.beginPath();
-              ctx.moveTo(face[a].x * canvas.width, face[a].y * canvas.height);
-              ctx.lineTo(face[b].x * canvas.width, face[b].y * canvas.height);
+              ctx.moveTo((canvas.width - face[a].x * canvas.width), face[a].y * canvas.height);
+              ctx.lineTo((canvas.width - face[b].x * canvas.width), face[b].y * canvas.height);
               ctx.stroke();
             }
           }
@@ -177,18 +215,65 @@ export function WebCamMotionTracker() {
         pipePlayedRef.current = false;
       }
 
+      // --- Hands on head detection ---
+      const handResult = handLandmarker.detectForVideo(video, performance.now());
+      let handsOnHead = false;
+      // Use face landmarks for head, hand landmarks for hands
+      if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0 && handResult.landmarks && handResult.landmarks.length > 0) {
+        const face = faceResult.faceLandmarks[0];
+        // Use forehead (landmark 10), left temple (338), right temple (297)
+        const headPoints = [face[10], face[338], face[297]];
+        for (const hand of handResult.landmarks) {
+          // Use wrist (0), palm center (9), and fingertips (4, 8, 12, 16, 20)
+          const handPoints = [hand[0], hand[9], hand[4], hand[8], hand[12], hand[16], hand[20]];
+          for (const hp of handPoints) {
+            for (const hd of headPoints) {
+              const dx = (hp.x - hd.x) * canvas.width;
+              const dy = (hp.y - hd.y) * canvas.height;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist < 60) { // 60px threshold for "touching"
+                handsOnHead = true;
+                break;
+              }
+            }
+            if (handsOnHead) break;
+          }
+          if (handsOnHead) break;
+        }
+      }
+      if (handsOnHead) {
+        if (!handsOnHeadRef.current) {
+          handsOnHeadStartRef.current = now;
+          handsOnHeadPlayedRef.current = false;
+        }
+        handsOnHeadRef.current = true;
+        if (
+          handsOnHeadStartRef.current &&
+          now - handsOnHeadStartRef.current > 3000 // 3 seconds
+        ) {
+          if (!handsOnHeadPlayedRef.current) {
+            new Audio('/WAKE_UP.mp3').play().catch(() => {});
+            handsOnHeadPlayedRef.current = true;
+          }
+        }
+      } else {
+        handsOnHeadRef.current = false;
+        handsOnHeadStartRef.current = null;
+        handsOnHeadPlayedRef.current = false;
+      }
+
       // Pose skeleton
       const poseResult = poseLandmarker.detectForVideo(video, performance.now());
       if (poseResult.landmarks && poseResult.landmarks.length > 0) {
         for (const pose of poseResult.landmarks) {
-          // Draw all 33 pose landmarks
+          // Draw all 33 pose landmarks (mirrored)
           for (const point of pose) {
             ctx.beginPath();
-            ctx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
+            ctx.arc((canvas.width - point.x * canvas.width), point.y * canvas.height, 3, 0, 2 * Math.PI);
             ctx.fillStyle = '#f59e0b';
             ctx.fill();
           }
-          // Draw skeleton connections
+          // Draw skeleton connections (mirrored)
           const connections = [
             [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], // arms
             [11, 23], [12, 24], [23, 24], // torso
@@ -200,8 +285,42 @@ export function WebCamMotionTracker() {
           for (const [a, b] of connections) {
             if (pose[a] && pose[b]) {
               ctx.beginPath();
-              ctx.moveTo(pose[a].x * canvas.width, pose[a].y * canvas.height);
-              ctx.lineTo(pose[b].x * canvas.width, pose[b].y * canvas.height);
+              ctx.moveTo((canvas.width - pose[a].x * canvas.width), pose[a].y * canvas.height);
+              ctx.lineTo((canvas.width - pose[b].x * canvas.width), pose[b].y * canvas.height);
+              ctx.stroke();
+            }
+          }
+          ctx.globalAlpha = 1.0;
+        }
+      }
+
+      // Hand landmarks
+      if (handResult.landmarks && handResult.landmarks.length > 0) {
+        for (const hand of handResult.landmarks) {
+          // Draw 21 hand landmarks (mirrored)
+          for (const pt of hand) {
+            ctx.beginPath();
+            ctx.arc((canvas.width - pt.x * canvas.width), pt.y * canvas.height, 3, 0, 2 * Math.PI);
+            ctx.fillStyle = '#22c55e';
+            ctx.fill();
+          }
+          // Draw hand skeleton connections (mirrored)
+          const handConnections = [
+            [0,1],[1,2],[2,3],[3,4], // Thumb
+            [0,5],[5,6],[6,7],[7,8], // Index
+            [5,9],[9,10],[10,11],[11,12], // Middle
+            [9,13],[13,14],[14,15],[15,16], // Ring
+            [13,17],[17,18],[18,19],[19,20], // Pinky
+            [0,17] // Palm base to pinky base
+          ];
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = 0.8;
+          for (const [a, b] of handConnections) {
+            if (hand[a] && hand[b]) {
+              ctx.beginPath();
+              ctx.moveTo((canvas.width - hand[a].x * canvas.width), hand[a].y * canvas.height);
+              ctx.lineTo((canvas.width - hand[b].x * canvas.width), hand[b].y * canvas.height);
               ctx.stroke();
             }
           }
@@ -225,45 +344,34 @@ export function WebCamMotionTracker() {
     return () => cancelAnimationFrame(animationId);
   }, [isRunning, modelReady]);
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach((t) => t.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsRunning(false);
-    setStatus('Camera stopped.');
-  };
+
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] p-4">
-      <h1 className="text-2xl font-bold mb-4">Webcam Motion Tracker</h1>
-      <div className="mb-4 flex flex-col items-center gap-2">
-        <label className="text-slate-200 font-medium">Wake up delay: {wakeUpDelay} seconds</label>
-      </div>
-      <div className="relative">
+      <div className="relative flex justify-center items-center">
         <video ref={videoRef} className="rounded-lg shadow-lg" style={{ display: 'none' }} />
-        <canvas ref={canvasRef} className="rounded-lg shadow-lg border border-blue-400" />
-      </div>
-      <div className="mt-4 flex gap-2">
-        {!isRunning ? (
-          <button
-            onClick={startCamera}
-            disabled={!modelReady}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+        <canvas
+          ref={canvasRef}
+          className="rounded-lg shadow-lg border border-blue-400"
+          style={{
+            ...(small
+              ? { width: '300px', height: '225px', maxWidth: '90vw', maxHeight: '80vh' }
+              : { width: '800px', height: '600px', maxWidth: '90vw', maxHeight: '80vh' }
+            ),
+            background: !isRunning ? '#181e2a' : 'transparent',
+            transition: 'background 0.2s',
+          }}
+        />
+        {/* Status overlay inside preview, only show when not running */}
+        {!isRunning && status && (
+          <div
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-4 py-2 bg-black/80 text-white rounded text-center pointer-events-none"
+            style={{ zIndex: 10, fontSize: small ? 18 : 24, minWidth: 120 }}
           >
-            Start
-          </button>
-        ) : (
-          <button
-            onClick={stopCamera}
-            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
-          >
-            Stop
-          </button>
+            {status}
+          </div>
         )}
       </div>
-      <p className="mt-2 text-slate-300">{status}</p>
     </div>
   );
 }
