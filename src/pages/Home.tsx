@@ -1,6 +1,6 @@
 import type { DragEvent } from 'react';
 import { useState, useRef, useCallback } from 'react';
-import { WebcamDetector } from '../components/WebcamDetector';
+import { VideoTracker } from '../components/VideoTracker';
 import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
 import tileData from '../data/tileData.json';
@@ -239,7 +239,7 @@ export function Home() {
                                     style={{ userSelect: 'none', touchAction: 'none' }}
                                 />
                             )}
-                            <WebcamDetector onGesture={handleGesture} />
+                            <VideoTracker onGesture={handleGesture} />
                         </section>
 
                         {showRightZone && (
