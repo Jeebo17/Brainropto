@@ -1,5 +1,5 @@
 import type { DragEvent } from 'react';
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { WebcamDetector } from '../components/WebcamDetector';
 import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
@@ -139,6 +139,19 @@ export function Home() {
 
         setRightTile(null);
     };
+  
+    const handleGesture = useCallback((gesture: '67' | 'rickroll') => {
+        console.log(`[Home] Gesture event received: ${gesture}`);
+        // TODO: Wire up UI responses here
+        // gesture === '67' → trigger 67 effect
+        // gesture === 'rickroll' → trigger rickroll effect
+    }, []);
+
+    const handleLeftVideoUpload = (file: File | null) => {
+        if (!file) {
+        if (leftVideo) URL.revokeObjectURL(leftVideo);
+        setLeftVideo(null);
+        return;
 
     return (
         <main className="w-full max-w-none h-[calc(100vh-88px)] bg-[#061126] text-slate-100">
@@ -232,7 +245,7 @@ export function Home() {
                                     style={{ userSelect: 'none', touchAction: 'none' }}
                                 />
                             )}
-                            <WebcamDetector />
+                            <WebcamDetector onGesture={handleGesture} />
                         </section>
 
                         {showRightZone && (
