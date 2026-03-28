@@ -13,6 +13,8 @@ interface DragZoneProps {
     onDragLeaveZone: (side: SnapSide) => void;
     onDropInZone: (event: DragEvent<HTMLElement>, side: SnapSide) => void;
     onClearTile: (side: SnapSide) => void;
+    showFullscreen?: boolean;
+    onFullscreen?: () => void;
 }
 
 export default function DragZone({
@@ -23,6 +25,8 @@ export default function DragZone({
     onDragLeaveZone,
     onDropInZone,
     onClearTile,
+    showFullscreen = false,
+    onFullscreen,
 }: DragZoneProps) {
     const sideLabel = side === 'left' ? 'Left' : 'Right';
 
@@ -36,7 +40,15 @@ export default function DragZone({
             }`}
         >
             {tile ? (
-                <div className="space-y-2 flex-1 flex flex-col min-h-0">
+                <div className="space-y-2 flex-1 flex flex-col min-h-0 relative">
+                    {showFullscreen && onFullscreen && (
+                        <button
+                            onClick={onFullscreen}
+                            className="absolute top-2 left-2 px-2 py-1 text-xs bg-blue-600 text-white rounded shadow hover:bg-blue-700 z-10"
+                        >
+                            Fullscreen
+                        </button>
+                    )}
                     <Tile data={tile} />
                     <button
                         onClick={() => onClearTile(side)}
