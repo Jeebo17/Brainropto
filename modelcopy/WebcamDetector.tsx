@@ -178,8 +178,6 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const frameInFlightRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const handHistoriesRef = useRef<PositionEntry[][]>([[], []]);
-  const poseBufferRef = useRef<{ x: number; y: number; z: number }[][]>([]); // last N frames of full pose
-  const SMOOTHING_FRAMES = 2;
   const lastGestureTimeRef = useRef<Record<GestureType, number>>({ '67': 0, rickroll: 0 });
   const onGestureRef = useRef(onGesture);
   onGestureRef.current = onGesture;
@@ -281,31 +279,11 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
     if (!poseLandmarks || poseLandmarks.length === 0) {
       setHandPosition(null);
-      // Clear history when pose is lost (scene cut, model lost tracking)
-      handHistoriesRef.current = [[], []];
-      poseBufferRef.current = [];
       return;
     }
 
     const now = Date.now();
-    const rawPose = poseLandmarks[0]; // first (only) detected pose
-
-    // Temporal smoothing — average landmarks over last N frames to reduce jitter
-    poseBufferRef.current.push(rawPose);
-    if (poseBufferRef.current.length > SMOOTHING_FRAMES) {
-      poseBufferRef.current.shift();
-    }
-    const buffer = poseBufferRef.current;
-    const pose = rawPose.map((_, i) => {
-      let sumX = 0, sumY = 0, sumZ = 0;
-      for (const frame of buffer) {
-        sumX += frame[i].x;
-        sumY += frame[i].y;
-        sumZ += frame[i].z;
-      }
-      return { x: sumX / buffer.length, y: sumY / buffer.length, z: sumZ / buffer.length };
-    });
-
+    const pose = poseLandmarks[0]; // first (only) detected pose
     const torsoHeight = computeTorsoHeight(pose);
 
     // Extract wrist positions
@@ -359,11 +337,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
     setHandPosition({ x: leftWrist.x, y: leftWrist.y, z: leftWrist.z });
 
-    // Track wrist position history for gesture detection
-    // Sort wrists by X position so the same physical hand always maps to the same slot
-    const sortedWrists = [...wrists].sort((a, b) => a.x - b.x);
-    sortedWrists.forEach((wrist, slotIndex) => {
-      const history = handHistoriesRef.current[slotIndex];
+    // Track wrist position history for gesture detection (same as before)
+    wrists.forEach((wrist, handIndex) => {
+      const history = handHistoriesRef.current[handIndex];
       history.push({ x: wrist.x, y: wrist.y, time: now });
       const cutoff = now - GESTURE_WINDOW_MS;
       while (history.length > 0 && history[0].time < cutoff) {
@@ -429,7 +405,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     if (gesture && now - lastGestureTimeRef.current[gesture] > GESTURE_COOLDOWN_MS) {
       lastGestureTimeRef.current[gesture] = now;
       setLastGesture(gesture);
-      console.log(`[${new Date().toLocaleTimeString()}] Gesture Detected: ${gesture}`);
+      console.log(`[Gesture Detected] ${gesture}`);
       onGestureRef.current?.(gesture);
       handHistoriesRef.current = [[], []];
     }
@@ -492,7 +468,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       setStatusText('Load a video first.');
       return;
     }
-    // new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
+    new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' } as MediaTrackConstraints,
