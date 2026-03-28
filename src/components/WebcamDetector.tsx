@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Hands, Results } from '@mediapipe/hands';
+import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 
@@ -21,10 +21,28 @@ type GestureType = '67' | 'rickroll';
 type PositionEntry = { x: number; y: number; time: number };
 
 const GESTURE_WINDOW_MS = 5000; // 5 second window
-const MIN_DISPLACEMENT_Y = 0.10; // for 67 (up-down)
-const MIN_DISPLACEMENT_X = 0.08; // for rickroll (side-to-side)
+// Displacement thresholds as a proportion of torso height
+const MIN_DISPLACEMENT_Y_RATIO = 0.15; // 15% of torso height for 67 (up-down)
+const MIN_DISPLACEMENT_X_RATIO = 0.10; // 10% of torso height for rickroll (side-to-side)
+// Fallbacks if torso can't be measured
+const MIN_DISPLACEMENT_Y_FALLBACK = 0.10;
+const MIN_DISPLACEMENT_X_FALLBACK = 0.08;
 const REQUIRED_REVERSALS = 4; // 2 full pumps/sweeps = 4 direction changes
 const GESTURE_COOLDOWN_MS = 3000; // 3 seconds between same gesture events
+
+// Pose landmark indices
+const LEFT_SHOULDER = 11;
+const RIGHT_SHOULDER = 12;
+const LEFT_HIP = 23;
+const RIGHT_HIP = 24;
+
+function computeTorsoHeight(pose: { x: number; y: number; z: number }[]): number | null {
+  if (pose.length < 25) return null;
+  const shoulderMidY = (pose[LEFT_SHOULDER].y + pose[RIGHT_SHOULDER].y) / 2;
+  const hipMidY = (pose[LEFT_HIP].y + pose[RIGHT_HIP].y) / 2;
+  const height = Math.abs(hipMidY - shoulderMidY);
+  return height > 0.01 ? height : null; // ignore if too small (bad detection)
+}
 
 // Count direction reversals along one axis within a position history
 function countReversals(values: number[], minDisplacement: number): number {
@@ -51,15 +69,17 @@ function countReversals(values: number[], minDisplacement: number): number {
 
 function detectGesture(
   handHistories: PositionEntry[][],
-  handCount: number,
+  torsoHeight: number | null,
 ): GestureType | null {
+  const minDispY = torsoHeight ? torsoHeight * MIN_DISPLACEMENT_Y_RATIO : MIN_DISPLACEMENT_Y_FALLBACK;
+  const minDispX = torsoHeight ? torsoHeight * MIN_DISPLACEMENT_X_RATIO : MIN_DISPLACEMENT_X_FALLBACK;
+
   // 67: both hands pumping up and down in OPPOSITE directions
   if (handHistories.length >= 2 && handHistories[0].length >= 3 && handHistories[1].length >= 3) {
-    const yRev0 = countReversals(handHistories[0].map((p) => p.y), MIN_DISPLACEMENT_Y);
-    const yRev1 = countReversals(handHistories[1].map((p) => p.y), MIN_DISPLACEMENT_Y);
+    const yRev0 = countReversals(handHistories[0].map((p) => p.y), minDispY);
+    const yRev1 = countReversals(handHistories[1].map((p) => p.y), minDispY);
 
     if (yRev0 >= REQUIRED_REVERSALS && yRev1 >= REQUIRED_REVERSALS) {
-      // Correlate Y movement by matching timestamps between the two hand histories
       const h0 = handHistories[0];
       const h1 = handHistories[1];
 
@@ -99,15 +119,15 @@ function detectGesture(
   // Rickroll: both hands moving side to side (X-axis reversals on both)
   // But NOT if there's significant Y movement (that's a 67, not a rickroll)
   if (handHistories.length >= 2) {
-    const yRev0 = countReversals(handHistories[0].map((p) => p.y), MIN_DISPLACEMENT_Y);
-    const yRev1 = countReversals(handHistories[1].map((p) => p.y), MIN_DISPLACEMENT_Y);
-    const hasSignificantY = yRev0 >= REQUIRED_REVERSALS || yRev1 >= REQUIRED_REVERSALS;
+    const yRev0r = countReversals(handHistories[0].map((p) => p.y), minDispY);
+    const yRev1r = countReversals(handHistories[1].map((p) => p.y), minDispY);
+    const hasSignificantY = yRev0r >= REQUIRED_REVERSALS || yRev1r >= REQUIRED_REVERSALS;
 
     if (!hasSignificantY) {
       const bothHaveSweeps = handHistories.slice(0, 2).every((history) => {
         if (history.length < 3) return false;
         const xValues = history.map((p) => p.x);
-        return countReversals(xValues, MIN_DISPLACEMENT_X) >= REQUIRED_REVERSALS;
+        return countReversals(xValues, minDispX) >= REQUIRED_REVERSALS;
       });
       if (bothHaveSweeps) return 'rickroll';
     }
@@ -127,7 +147,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const playerShellRef = useRef<HTMLDivElement>(null);
-  const handsRef = useRef<Hands | null>(null);
+  const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const frameInFlightRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
@@ -137,6 +157,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   onGestureRef.current = onGesture;
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
   const [lastGesture, setLastGesture] = useState<string | null>(null);
   const [sessionInput, setSessionInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -154,10 +175,57 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       .then((data) => {
         setIsAuthenticated(data.authenticated);
         if (data.authenticated) {
-          setStatusText('Paste a Panopto link or session ID to load the lecture.');
+          setStatusText('Loading hand detection model...');
         }
       })
       .catch(() => setStatusText('Cannot connect to server. Is it running on port 3001?'));
+  }, []);
+
+  // Initialize HandLandmarker model on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initModel() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
+        );
+        if (cancelled) return;
+
+        const landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task',
+            delegate: 'GPU',
+          },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.3,
+          minPosePresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3,
+        });
+        if (cancelled) {
+          landmarker.close();
+          return;
+        }
+
+        poseLandmarkerRef.current = landmarker;
+        setModelReady(true);
+        setStatusText('Model loaded. Paste a Panopto link or session ID.');
+      } catch (err) {
+        console.error('Failed to load PoseLandmarker:', err);
+        setStatusText(`Model load failed: ${(err as Error).message}`);
+      }
+    }
+
+    initModel();
+    return () => {
+      cancelled = true;
+      if (poseLandmarkerRef.current) {
+        poseLandmarkerRef.current.close();
+        poseLandmarkerRef.current = null;
+      }
+    };
   }, []);
 
   const panoptoEmbedUrl = sessionId
@@ -177,7 +245,14 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     }
   };
 
-  const drawResults = useCallback((results: Results) => {
+  // Pose landmark indices
+  // 15 = left wrist, 16 = right wrist
+  // 11 = left shoulder, 12 = right shoulder, 13 = left elbow, 14 = right elbow
+  const LEFT_WRIST = 15;
+  const RIGHT_WRIST = 16;
+
+  // Process pose detection results — draw overlays, track wrist history, detect gestures
+  const processResults = useCallback((poseLandmarks: { x: number; y: number; z: number }[][]) => {
     const canvas = overlayRef.current;
     if (!canvas) return;
 
@@ -188,76 +263,56 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    if (!poseLandmarks || poseLandmarks.length === 0) {
       setHandPosition(null);
       return;
     }
 
     const now = Date.now();
-    let detectedHands = results.multiHandLandmarks;
+    const pose = poseLandmarks[0]; // first (only) detected pose
+    const torsoHeight = computeTorsoHeight(pose);
 
-    // Filter phantom double-detections: if two "hands" have wrists too close, treat as one
-    const MIN_HAND_DISTANCE = 0.25;
-    if (detectedHands.length >= 2) {
-      const wrist0 = detectedHands[0][0];
-      const wrist1 = detectedHands[1][0];
-      const dist = Math.sqrt((wrist0.x - wrist1.x) ** 2 + (wrist0.y - wrist1.y) ** 2);
-      if (dist < MIN_HAND_DISTANCE) {
-        detectedHands = [detectedHands[0]];
-      }
+    // Extract wrist positions
+    const leftWrist = pose[LEFT_WRIST];
+    const rightWrist = pose[RIGHT_WRIST];
+    const wrists = [leftWrist, rightWrist];
+
+    // Draw full pose skeleton on the main overlay
+    // Draw all 33 pose landmarks
+    for (const point of pose) {
+      ctx.beginPath();
+      ctx.arc(point.x * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
+      ctx.fillStyle = '#60a5fa';
+      ctx.fill();
     }
 
-    const handCount = detectedHands.length;
-
-    detectedHands.forEach((hand, handIndex) => {
-      const xs = hand.map((p) => p.x);
-      const ys = hand.map((p) => p.y);
-
-      const minX = Math.min(...xs) * canvas.width;
-      const maxX = Math.max(...xs) * canvas.width;
-      const minY = Math.min(...ys) * canvas.height;
-      const maxY = Math.max(...ys) * canvas.height;
-
-      const boxX = minX - 10;
-      const boxY = minY - 10;
-      const boxWidth = maxX - minX + 20;
-      const boxHeight = maxY - minY + 20;
-
-      ctx.strokeStyle = '#22c55e';
+    // Highlight wrists with larger circles
+    wrists.forEach((wrist, i) => {
+      const color = i === 0 ? '#22c55e' : '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(wrist.x * canvas.width, wrist.y * canvas.height, 8, 0, 2 * Math.PI);
+      ctx.strokeStyle = color;
       ctx.lineWidth = 3;
-      ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+      ctx.stroke();
 
-      ctx.fillStyle = '#22c55e';
-      ctx.fillRect(boxX, boxY - 28, 132, 24);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.fillText('Lecturer Hand', boxX + 8, boxY - 11);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(i === 0 ? 'L' : 'R', wrist.x * canvas.width - 4, wrist.y * canvas.height - 12);
+    });
 
-      for (const point of hand) {
-        ctx.beginPath();
-        ctx.arc(point.x * canvas.width, point.y * canvas.height, 2.5, 0, 2 * Math.PI);
-        ctx.fillStyle = '#60a5fa';
-        ctx.fill();
-      }
+    setHandPosition({ x: leftWrist.x, y: leftWrist.y, z: leftWrist.z });
 
-      const wrist = hand[0];
-      setHandPosition({ x: wrist.x, y: wrist.y, z: wrist.z });
-
-      // Track wrist position history for gesture detection
-      if (handIndex < 2) {
-        const history = handHistoriesRef.current[handIndex];
-        history.push({ x: wrist.x, y: wrist.y, time: now });
-        // Trim to 5 second window
-        const cutoff = now - GESTURE_WINDOW_MS;
-        while (history.length > 0 && history[0].time < cutoff) {
-          history.shift();
-        }
+    // Track wrist position history for gesture detection (same as before)
+    wrists.forEach((wrist, handIndex) => {
+      const history = handHistoriesRef.current[handIndex];
+      history.push({ x: wrist.x, y: wrist.y, time: now });
+      const cutoff = now - GESTURE_WINDOW_MS;
+      while (history.length > 0 && history[0].time < cutoff) {
+        history.shift();
       }
     });
 
-    // Don't clear history for temporarily lost hands — let time window handle expiry
-
-    // Draw hand detection overlay on the debug crop canvas
+    // Draw pose detection overlay on the debug crop canvas
     const debugCanvas = debugOverlayRef.current;
     if (debugCanvas) {
       const cropCanvas = cropCanvasRef.current;
@@ -269,34 +324,26 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       if (dCtx) {
         dCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
 
-        detectedHands.forEach((hand, handIndex) => {
-          const color = handIndex === 0 ? '#22c55e' : '#f59e0b';
-          const dxs = hand.map((p) => p.x);
-          const dys = hand.map((p) => p.y);
-          const dMinX = Math.min(...dxs) * debugCanvas.width;
-          const dMaxX = Math.max(...dxs) * debugCanvas.width;
-          const dMinY = Math.min(...dys) * debugCanvas.height;
-          const dMaxY = Math.max(...dys) * debugCanvas.height;
+        // Draw all pose landmarks
+        for (const point of pose) {
+          dCtx.beginPath();
+          dCtx.arc(point.x * debugCanvas.width, point.y * debugCanvas.height, 2, 0, 2 * Math.PI);
+          dCtx.fillStyle = '#60a5fa';
+          dCtx.fill();
+        }
 
-          // Bounding box
+        // Highlight wrists
+        wrists.forEach((wrist, i) => {
+          const color = i === 0 ? '#22c55e' : '#f59e0b';
+          dCtx.beginPath();
+          dCtx.arc(wrist.x * debugCanvas.width, wrist.y * debugCanvas.height, 6, 0, 2 * Math.PI);
           dCtx.strokeStyle = color;
           dCtx.lineWidth = 2;
-          dCtx.strokeRect(dMinX - 8, dMinY - 8, dMaxX - dMinX + 16, dMaxY - dMinY + 16);
+          dCtx.stroke();
 
-          // Label
           dCtx.fillStyle = color;
-          dCtx.fillRect(dMinX - 8, dMinY - 30, 70, 20);
-          dCtx.fillStyle = '#fff';
-          dCtx.font = 'bold 12px sans-serif';
-          dCtx.fillText(`Hand ${handIndex + 1}`, dMinX - 3, dMinY - 15);
-
-          // Landmarks
-          for (const point of hand) {
-            dCtx.beginPath();
-            dCtx.arc(point.x * debugCanvas.width, point.y * debugCanvas.height, 2, 0, 2 * Math.PI);
-            dCtx.fillStyle = '#60a5fa';
-            dCtx.fill();
-          }
+          dCtx.font = 'bold 10px sans-serif';
+          dCtx.fillText(i === 0 ? 'L' : 'R', wrist.x * debugCanvas.width - 3, wrist.y * debugCanvas.height - 9);
         });
 
         // Draw wrist trails from history
@@ -319,13 +366,12 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     }
 
     // Run gesture detection
-    const gesture = detectGesture(handHistoriesRef.current, handCount);
+    const gesture = detectGesture(handHistoriesRef.current, torsoHeight);
     if (gesture && now - lastGestureTimeRef.current[gesture] > GESTURE_COOLDOWN_MS) {
       lastGestureTimeRef.current[gesture] = now;
       setLastGesture(gesture);
       console.log(`[Gesture Detected] ${gesture}`);
       onGestureRef.current?.(gesture);
-      // Clear histories after firing to avoid re-triggering
       handHistoriesRef.current = [[], []];
     }
   }, []);
@@ -415,41 +461,31 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     }
   };
 
-  // MediaPipe analysis loop — captures tab, crops to player shell, feeds to MediaPipe
+  // MediaPipe analysis loop — captures tab, crops to player shell, feeds to HandLandmarker
   useEffect(() => {
-    if (!isSharing) return;
+    if (!isSharing || !modelReady) return;
 
     const video = captureVideoRef.current;
     const cropCanvas = cropCanvasRef.current;
-    const overlay = overlayRef.current;
     const shell = playerShellRef.current;
-    if (!video || !cropCanvas || !shell) return;
+    const landmarker = poseLandmarkerRef.current;
+    if (!video || !cropCanvas || !shell || !landmarker) return;
 
     let cancelled = false;
-
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-    });
-
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
-
-    hands.onResults(drawResults);
-    handsRef.current = hands;
 
     // Offscreen canvas for flicker-free cropping
     const offscreen = document.createElement('canvas');
     const offCtx = offscreen.getContext('2d');
+    // Upscaled canvas — HandLandmarker works better with larger images
+    const upscaled = document.createElement('canvas');
+    const upCtx = upscaled.getContext('2d');
+    const MIN_MEDIAPIPE_WIDTH = 640;
     const cropCtx = cropCanvas.getContext('2d');
     let lastCropW = 0;
     let lastCropH = 0;
 
-    const loop = async () => {
-      if (cancelled || !captureVideoRef.current || !handsRef.current || !cropCtx || !offCtx) return;
+    const loop = () => {
+      if (cancelled || !captureVideoRef.current || !poseLandmarkerRef.current || !cropCtx || !offCtx) return;
 
       const currentVideo = captureVideoRef.current;
 
@@ -461,20 +497,15 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       ) {
         frameInFlightRef.current = true;
         try {
-          // Get the player shell's position relative to the viewport
           const rect = shell.getBoundingClientRect();
-
-          // The capture video is the full tab — calculate crop ratios
           const tabWidth = document.documentElement.clientWidth;
           const tabHeight = document.documentElement.clientHeight;
           const vidWidth = currentVideo.videoWidth;
           const vidHeight = currentVideo.videoHeight;
 
-          // Scale factor between captured pixels and CSS pixels
           const scaleX = vidWidth / tabWidth;
           const scaleY = vidHeight / tabHeight;
 
-          // Source crop region in captured video coordinates
           const sx = rect.left * scaleX;
           const sy = rect.top * scaleY;
           const fullW = Math.floor(rect.width * scaleX);
@@ -483,7 +514,6 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           // Crop to left half only (lecturer side of Panopto split-screen)
           const sw = Math.floor(fullW / 2);
 
-          // Only resize canvases when dimensions change (avoids clearing)
           if (sw !== lastCropW || sh !== lastCropH) {
             offscreen.width = sw;
             offscreen.height = sh;
@@ -493,20 +523,31 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
             lastCropH = sh;
           }
 
-          // Draw left-half cropped region to offscreen canvas
-          offCtx.drawImage(
-            currentVideo,
-            sx, sy, sw, sh,
-            0, 0, sw, sh
-          );
+          offCtx.drawImage(currentVideo, sx, sy, sw, sh, 0, 0, sw, sh);
 
-          // Copy offscreen to visible crop canvas in one operation (no flicker)
           cropCtx.clearRect(0, 0, sw, sh);
           cropCtx.drawImage(offscreen, 0, 0);
 
-          // Feed offscreen frame to MediaPipe
-          await handsRef.current.send({ image: offscreen });
+          // Upscale for HandLandmarker if the crop is too small
+          let mediapipeInput: HTMLCanvasElement = offscreen;
+          if (sw < MIN_MEDIAPIPE_WIDTH && upCtx) {
+            const scale = MIN_MEDIAPIPE_WIDTH / sw;
+            const upW = Math.floor(sw * scale);
+            const upH = Math.floor(sh * scale);
+            if (upscaled.width !== upW || upscaled.height !== upH) {
+              upscaled.width = upW;
+              upscaled.height = upH;
+            }
+            upCtx.drawImage(offscreen, 0, 0, sw, sh, 0, 0, upW, upH);
+            mediapipeInput = upscaled;
+          }
+
+          // Synchronous detection with tasks-vision API
+          const result = poseLandmarkerRef.current.detectForVideo(mediapipeInput, performance.now());
+          processResults(result.landmarks);
           setIsAnalyzing(true);
+        } catch (err) {
+          console.error('Detection error:', err);
         } finally {
           frameInFlightRef.current = false;
         }
@@ -523,12 +564,10 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
         window.cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
-      hands.close();
-      handsRef.current = null;
       frameInFlightRef.current = false;
       setIsAnalyzing(false);
     };
-  }, [isSharing, drawResults, handleStopSharing]);
+  }, [isSharing, modelReady, processResults, handleStopSharing]);
 
   return (
     <div className="order-2 flex w-full lg:w-4/5 flex-col gap-4 p-4 bg-white rounded-lg shadow-lg">
@@ -601,8 +640,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
         ) : (
           <>
             <p className="text-sm text-gray-700">
-              Paste a Panopto lecture link, then click "Start Capture" to share this tab.
-              MediaPipe will crop to the player area and detect hands.
+              {!modelReady
+                ? 'Loading hand detection model...'
+                : 'Paste a Panopto lecture link, then click "Start Capture" to share this tab.'}
             </p>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <input
@@ -615,7 +655,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
               <button
                 type="button"
                 onClick={handleLoadSession}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                disabled={!modelReady}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 Load
               </button>
@@ -623,7 +664,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
                 <button
                   type="button"
                   onClick={handleStartCapture}
-                  disabled={!sessionId}
+                  disabled={!sessionId || !modelReady}
                   className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
                   Start Capture
@@ -645,6 +686,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       <div className="rounded-lg bg-gray-100 p-3 text-sm text-gray-800">
         <p>
           <span className="font-semibold">Status:</span> {statusText}
+        </p>
+        <p>
+          <span className="font-semibold">Model:</span> {modelReady ? 'Ready (PoseLandmarker Heavy)' : 'Loading...'}
         </p>
         <p>
           <span className="font-semibold">Analyzing:</span> {isAnalyzing ? 'Yes' : 'No'}
