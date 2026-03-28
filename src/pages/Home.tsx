@@ -1,5 +1,5 @@
 import type { DragEvent } from 'react';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { WebcamDetector } from '../components/WebcamDetector';
 import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
@@ -17,7 +17,10 @@ export function Home() {
     const [rightWidth, setRightWidth] = useState(25); // in vw
     const [fullscreenSide, setFullscreenSide] = useState<null | 'left' | 'right'>(null);
     const [floatingPos, setFloatingPos] = useState<{x: number, y: number}>({ x: 40, y: 40 });
+    const [show67Indicator, setShow67Indicator] = useState(false);
+    const gesture67TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const draggingRef = useRef<{side: 'left'|'right'|null, startX: number, startLeft: number, startRight: number}|null>(null);
+
     const floatingDragRef = useRef<{offsetX: number, offsetY: number} | null>(null);
         // Floating modal drag logic
         const handleFloatingMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -140,16 +143,39 @@ export function Home() {
         setRightTile(null);
     };
 
+    useEffect(() => {
+        return () => {
+            if (gesture67TimeoutRef.current) {
+                clearTimeout(gesture67TimeoutRef.current);
+            }
+        };
+    }, []);
+
     const handleGesture = useCallback((gesture: '67' | 'rickroll') => {
-        console.log(`[Home] Gesture event received: ${gesture}`);
-        // TODO: Wire up UI responses here
-        // gesture === '67' → trigger 67 effect
-        // gesture === 'rickroll' → trigger rickroll effect
+        if (gesture === '67') {
+            setShow67Indicator(true);
+
+            if (gesture67TimeoutRef.current) {
+                clearTimeout(gesture67TimeoutRef.current);
+            }
+
+            gesture67TimeoutRef.current = setTimeout(() => {
+                setShow67Indicator(false);
+            }, 1000);
+        }
     }, []);
 
     return (
         <main className="w-full max-w-none h-[calc(100vh-88px)] bg-[#061126] text-slate-100">
             <div className="relative w-full h-full overflow-hidden">
+                {show67Indicator && (
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none">
+                        <div className="text-[38vw] leading-none font-black uppercase tracking-[-0.08em] text-red-500 drop-shadow-[0_0_30px_rgba(255,0,0,0.95)] animate-pulse select-none">
+                            67
+                        </div>
+                    </div>
+                )}
+
                 {/* Fullscreen overlay */}
                 {fullscreenSide && (
                     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
