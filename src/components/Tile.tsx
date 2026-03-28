@@ -1,4 +1,4 @@
-const TILE_VIDEO_LINK = 'https://www.youtube.com/watch?v=eRXE8Aebp7s';
+import { useEffect, useRef, useState } from 'react';
 import { TileType } from '../types/Types';
 
 const LOCKED_YOUTUBE_PARAMS =
@@ -44,23 +44,27 @@ function buildLockedVideoUrl(videoLink: string): string {
     }
 }
 
-export default function Tile({ data }: { data: TileType }) {
+interface TileProps {
+    data: TileType;
+}
+
+export default function Tile({ data }: TileProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
     const src = buildLockedVideoUrl(data.url);
 
     return (
-        <div className="border rounded-lg shadow-sm hover:shadow-md transition-shadow">
+        <div ref={containerRef} className="relative overflow-hidden border border-[#1a2d4a] rounded-lg shadow-sm hover:shadow-md transition-shadow h-full bg-[#061126]">
             <iframe
                 src={src}
-                width={data.width}
-                height={data.height}
                 title="Video player"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 referrerPolicy="strict-origin-when-cross-origin"
                 allowFullScreen
                 tabIndex={-1}
-                className="rounded-lg pointer-events-none select-none"
+                className="absolute inset-y-0 left-1/2 h-full -translate-x-1/2 pointer-events-none select-none" 
+                width={data.width}
+                height={data.height}
             ></iframe>
-            
         </div>
     );
 }
