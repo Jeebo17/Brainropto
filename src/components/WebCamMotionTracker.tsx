@@ -365,7 +365,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         {/* Status overlay inside preview, only show when not running */}
         {!isRunning && status && (
           <div
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-4 py-2 bg-black/80 text-white rounded text-center pointer-events-none"
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-4 py-2  text-white rounded text-center pointer-events-none"
             style={{ zIndex: 10, fontSize: small ? 18 : 24, minWidth: 120 }}
           >
             {status}
