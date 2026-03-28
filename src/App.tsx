@@ -3,11 +3,8 @@ import { Link } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
-<<<<<<< HEAD
 import WebCamMotionTrackerPage from './pages/WebCamMotionTracker';
-=======
 import Help from './pages/Help';
->>>>>>> a9061d4 (help page)
 import BrainrotAttack from './components/BrainrotAttack';
 
 
@@ -36,17 +33,18 @@ function App() {
               Settings
             </Link>
             <Link
-<<<<<<< HEAD
+
               to="/webcam-motion-tracker"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
             >
               Webcam Motion Tracker
-=======
+            </Link>
+            <Link
               to="/help"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
             >
               Help
->>>>>>> a9061d4 (help page)
+
             </Link>
           </nav>
         </div>
