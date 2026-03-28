@@ -3,11 +3,12 @@ import { useEffect, useState, useRef } from 'react';
 
 export function Settings() {
     const [pipeVolume, setPipeVolume] = useState(100);
+    const [pipeFrequency, setPipeFrequency] = useState(1000);
     const timeoutRef = useRef<NodeJS.Timeout>();
 
     useEffect(() => {
         const scheduleClang = () => {
-        const delay = (Math.random() * (10 - 3) + 3) * 60 * 1000;
+        const delay = (Math.random() * (10 - 3) + 3) * 60 * pipeFrequency;
         timeoutRef.current = setTimeout(() => {
             const audio = new Audio('/pipe.mp3');
             audio.volume = pipeVolume / 100;
@@ -19,7 +20,7 @@ export function Settings() {
         return () => {
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
-    }, [pipeVolume]);
+    }, [pipeVolume, pipeFrequency]);
 
     return (
         <main className="container mx-auto p-8 text-slate-100 bg-[#061126] min-h-[calc(100vh-88px)]">
@@ -44,7 +45,7 @@ export function Settings() {
 
                 <div>
                     <label className="block text-lg font-semibold text-slate-200 mb-2">
-                        Pipe Volume
+                        Pipe Volume: <span className="text-blue-300">{pipeVolume}</span>
                     </label>
                     <input
                         type="range"
@@ -55,6 +56,21 @@ export function Settings() {
                         className="w-full accent-blue-400"
                     />
                 </div>
+
+                <div>
+                    <label className="block text-lg font-semibold text-slate-200 mb-2">
+                        Pipe Frequency: <span className="text-blue-300">{pipeFrequency}</span>
+                    </label>
+                    <input
+                        type="range"
+                        min="1"
+                        max="1000"
+                        value={pipeFrequency}
+                        onChange={(e) => setPipeFrequency(Number(e.target.value))}
+                        className="w-full accent-blue-400"
+                    />
+                </div>
+
 
                 {/* <div>
                 <label className="flex items-center gap-3">

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
-import { useEffect } from 'react';
 
 function App() {
   return (
