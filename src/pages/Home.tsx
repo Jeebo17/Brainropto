@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { WebcamDetector } from '../components/WebcamDetector';
-import { Brain } from 'lucide-react';
 
 export function Home() {
     const [leftVideo, setLeftVideo] = useState<string | null>(null);
@@ -27,10 +26,6 @@ export function Home() {
         setRightVideo(url);
     };
 
-    const handleGestureDetected = () => {
-        console.log('67 gesture detected!');
-    };
-
     return (
         <main className="container mx-auto p-8">
             <div className="flex gap-6 items-start justify-center flex-wrap lg:flex-nowrap">
@@ -40,7 +35,7 @@ export function Home() {
                     videoUrl={leftVideo}
                 />
 
-                <WebcamDetector onGestureDetected={handleGestureDetected} />
+                <WebcamDetector />
 
                 <VideoPlayer
                     position="right"
