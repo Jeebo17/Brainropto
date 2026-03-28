@@ -53,8 +53,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
-        <Route path="/settings" element={<Settings />} />
         <Route path="/webcam-motion-tracker" element={<WebCamMotionTrackerPage />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
         <Route path="/help" element={<Help />} />
       </Routes>
