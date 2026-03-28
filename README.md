@@ -18,3 +18,6 @@ Occasionally play pipe drop noise
 
 // const panoptoEmbedUrl = `https://uniofbath.cloud.panopto.eu/Panopto/Pages/Embed.aspx?id=${panoptoVideoId}&autoplay=false&offerviewer=true&showtitle=true&showbrand=false&captions=false&interactivity=all`;
 const panoptoEmbedUrl = `https://uniofbath.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=c9334aea-2bc3-4f20-abf6-b40900ec1c02`;
+
+
+document.querySelector('button[aria-label="Download transcript"]').click();
