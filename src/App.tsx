@@ -1,9 +1,9 @@
 import { Routes, Route } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import { Brain } from 'lucide-react';
 import { Home } from './pages/Home';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
+import { useEffect } from 'react';
 
 function App() {
   return (
