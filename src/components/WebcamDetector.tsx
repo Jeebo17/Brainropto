@@ -477,8 +477,11 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           // Source crop region in captured video coordinates
           const sx = rect.left * scaleX;
           const sy = rect.top * scaleY;
-          const sw = Math.floor(rect.width * scaleX);
+          const fullW = Math.floor(rect.width * scaleX);
           const sh = Math.floor(rect.height * scaleY);
+
+          // Crop to left half only (lecturer side of Panopto split-screen)
+          const sw = Math.floor(fullW / 2);
 
           // Only resize canvases when dimensions change (avoids clearing)
           if (sw !== lastCropW || sh !== lastCropH) {
@@ -490,7 +493,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
             lastCropH = sh;
           }
 
-          // Draw cropped region to offscreen canvas
+          // Draw left-half cropped region to offscreen canvas
           offCtx.drawImage(
             currentVideo,
             sx, sy, sw, sh,
