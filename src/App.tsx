@@ -27,17 +27,16 @@ function App() {
               Home
             </Link>
             <Link
-              to="/settings"
-              className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
-            >
-              Settings
-            </Link>
-            <Link
-
               to="/webcam-motion-tracker"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
             >
               Webcam Motion Tracker
+            </Link>
+            <Link
+              to="/settings"
+              className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
+            >
+              Settings
             </Link>
             <Link
               to="/help"
