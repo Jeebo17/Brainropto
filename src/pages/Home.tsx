@@ -127,7 +127,7 @@ export function Home() {
             return;
         }
 
-        
+        // comment
         setRightTile(droppedTile);
     };
 
