@@ -122,57 +122,127 @@ app.get('/api/video/:sessionId', async (req, res) => {
     const token = await getAccessToken();
     const { sessionId } = req.params;
 
-    // Get session delivery info (contains podcast/stream URLs)
-    const deliveryRes = await fetch(
-      `${PANOPTO_BASE}/Panopto/api/v1/sessions/${sessionId}/deliveries`,
+    console.log(`Fetching session: ${sessionId}`);
+
+    // Get session details
+    const sessionRes = await fetch(
+      `${PANOPTO_BASE}/Panopto/api/v1/sessions/${sessionId}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    if (!deliveryRes.ok) {
-      const text = await deliveryRes.text();
-      return res.status(deliveryRes.status).json({
-        error: `Panopto API error (${deliveryRes.status})`,
-        details: text,
+    const sessionText = await sessionRes.text();
+    console.log('Session response status:', sessionRes.status);
+    console.log('Session response body:', sessionText.substring(0, 2000));
+
+    if (!sessionRes.ok) {
+      return res.status(sessionRes.status).json({
+        error: `Panopto API error (${sessionRes.status})`,
+        details: sessionText,
       });
     }
 
-    const deliveries = await deliveryRes.json();
+    const session = JSON.parse(sessionText);
 
-    // Look for a podcast (MP4) URL first, fall back to streaming URL
-    let videoUrl = null;
+    // Log all available keys and URLs for debugging
+    console.log('Session keys:', Object.keys(session));
+    console.log('Session Urls:', JSON.stringify(session.Urls, null, 2));
+    console.log('Session IosVideoUrl:', session.IosVideoUrl);
+    console.log('Session Mp4Url:', session.Mp4Url);
 
-    for (const delivery of deliveries) {
-      if (delivery.StreamUrl) {
-        videoUrl = delivery.StreamUrl;
-        break;
-      }
-    }
-
-    if (!videoUrl) {
-      // Try the session's podcast download URL instead
-      const sessionRes = await fetch(
-        `${PANOPTO_BASE}/Panopto/api/v1/sessions/${sessionId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      if (sessionRes.ok) {
-        const session = await sessionRes.json();
-        if (session.Urls?.PodcastUrl) {
-          videoUrl = session.Urls.PodcastUrl;
-        } else if (session.Urls?.StreamUrl) {
-          videoUrl = session.Urls.StreamUrl;
-        }
-      }
-    }
+    // Try all known URL fields
+    const videoUrl =
+      session.Urls?.PodcastUrl ||
+      session.Urls?.StreamUrl ||
+      session.Urls?.DownloadUrl ||
+      session.Urls?.IOSVideoUrl ||
+      session.Urls?.VideoUrl ||
+      session.Urls?.Mp4Url ||
+      session.IosVideoUrl ||
+      session.Mp4Url ||
+      null;
 
     if (!videoUrl) {
-      return res.status(404).json({ error: 'No video URL found for this session' });
+      return res.status(404).json({
+        error: 'No video URL found in session data',
+        availableUrls: session.Urls || null,
+        allKeys: Object.keys(session),
+      });
     }
 
     res.json({ videoUrl });
   } catch (err) {
     console.error('Error fetching video URL:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/stream/:sessionId — proxy the actual video bytes through the server
+app.get('/api/stream/:sessionId', async (req, res) => {
+  try {
+    const token = await getAccessToken();
+    const { sessionId } = req.params;
+
+    // Get the video URL first
+    const sessionRes = await fetch(
+      `${PANOPTO_BASE}/Panopto/api/v1/sessions/${sessionId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!sessionRes.ok) {
+      return res.status(sessionRes.status).send('Session not found');
+    }
+
+    const session = await sessionRes.json();
+    const videoUrl =
+      session.Urls?.PodcastUrl ||
+      session.Urls?.StreamUrl ||
+      session.Urls?.DownloadUrl ||
+      session.Urls?.IOSVideoUrl ||
+      session.Urls?.VideoUrl ||
+      session.IosVideoUrl ||
+      null;
+
+    if (!videoUrl) {
+      return res.status(404).send('No video URL found');
+    }
+
+    console.log('Proxying video from:', videoUrl);
+
+    // Proxy the video, passing through range headers for seeking
+    const headers = { Authorization: `Bearer ${token}` };
+    if (req.headers.range) {
+      headers.Range = req.headers.range;
+    }
+
+    const videoRes = await fetch(videoUrl, { headers, redirect: 'follow' });
+
+    console.log('Video proxy response status:', videoRes.status);
+    console.log('Video proxy content-type:', videoRes.headers.get('content-type'));
+    console.log('Video proxy content-length:', videoRes.headers.get('content-length'));
+
+    // If Panopto returned HTML instead of video, it needs cookie auth
+    const contentType = videoRes.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      console.log('ERROR: Panopto returned HTML — download URL needs cookie auth, not Bearer token');
+      return res.status(403).json({ error: 'Panopto download requires browser session auth. Bearer token was rejected.' });
+    }
+
+    // Forward status and relevant headers
+    res.status(videoRes.status);
+    const contentLength = videoRes.headers.get('content-length');
+    const contentRange = videoRes.headers.get('content-range');
+    const acceptRanges = videoRes.headers.get('accept-ranges');
+
+    if (contentType) res.set('Content-Type', contentType);
+    if (contentLength) res.set('Content-Length', contentLength);
+    if (contentRange) res.set('Content-Range', contentRange);
+    if (acceptRanges) res.set('Accept-Ranges', acceptRanges);
+
+    // Pipe the video stream to the client
+    videoRes.body.pipe(res);
+  } catch (err) {
+    console.error('Stream proxy error:', err);
+    res.status(500).send(err.message);
   }
 });
 
