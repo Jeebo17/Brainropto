@@ -278,26 +278,47 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     const wrists = [leftWrist, rightWrist];
 
     // Draw full pose skeleton on the main overlay
+    // Landmarks are normalized to the cropped left-half input,
+    // so scale x by 0.5 to map onto the full-width overlay
+    const scaleX = 0.5; // left half of player
+
     // Draw all 33 pose landmarks
     for (const point of pose) {
       ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
+      ctx.arc(point.x * scaleX * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
       ctx.fillStyle = '#60a5fa';
       ctx.fill();
     }
+
+    // Draw skeleton connections
+    const connections = [
+      [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], // arms
+      [11, 23], [12, 24], [23, 24], // torso
+      [23, 25], [25, 27], [24, 26], [26, 28], // legs
+    ];
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.4;
+    for (const [a, b] of connections) {
+      ctx.beginPath();
+      ctx.moveTo(pose[a].x * scaleX * canvas.width, pose[a].y * canvas.height);
+      ctx.lineTo(pose[b].x * scaleX * canvas.width, pose[b].y * canvas.height);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
 
     // Highlight wrists with larger circles
     wrists.forEach((wrist, i) => {
       const color = i === 0 ? '#22c55e' : '#f59e0b';
       ctx.beginPath();
-      ctx.arc(wrist.x * canvas.width, wrist.y * canvas.height, 8, 0, 2 * Math.PI);
+      ctx.arc(wrist.x * scaleX * canvas.width, wrist.y * canvas.height, 8, 0, 2 * Math.PI);
       ctx.strokeStyle = color;
       ctx.lineWidth = 3;
       ctx.stroke();
 
       ctx.fillStyle = color;
       ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(i === 0 ? 'L' : 'R', wrist.x * canvas.width - 4, wrist.y * canvas.height - 12);
+      ctx.fillText(i === 0 ? 'L' : 'R', wrist.x * scaleX * canvas.width - 4, wrist.y * canvas.height - 12);
     });
 
     setHandPosition({ x: leftWrist.x, y: leftWrist.y, z: leftWrist.z });
@@ -544,6 +565,10 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
           // Synchronous detection with tasks-vision API
           const result = poseLandmarkerRef.current.detectForVideo(mediapipeInput, performance.now());
+          console.log('Pose results:', result.landmarks.length, 'poses detected');
+          if (result.landmarks.length > 0) {
+            console.log('First pose landmarks count:', result.landmarks[0].length);
+          }
           processResults(result.landmarks);
           setIsAnalyzing(true);
         } catch (err) {
@@ -597,10 +622,10 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
         className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
       />
 
-      {/* Debug: shows cropped frame with hand detection overlay */}
+      {/* Debug panel - uncomment to show cropped frame with pose overlay
       {isSharing && (
         <div className="rounded-lg border border-yellow-400 p-2">
-          <p className="text-xs font-semibold text-yellow-600 mb-1">DEBUG: MediaPipe input + hand detection</p>
+          <p className="text-xs font-semibold text-yellow-600 mb-1">DEBUG: MediaPipe input + pose detection</p>
           <div className="relative" style={{ maxHeight: '200px' }}>
             <canvas
               ref={cropCanvasRef}
@@ -615,12 +640,11 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           </div>
         </div>
       )}
-      {!isSharing && (
-        <canvas
-          ref={cropCanvasRef}
-          className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
-        />
-      )}
+      */}
+      <canvas
+        ref={cropCanvasRef}
+        className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
+      />
 
       <div className="rounded-lg border border-[#1a2d4a] bg-[#0a1933] p-3">
         {!isAuthenticated ? (
