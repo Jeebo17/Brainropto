@@ -127,6 +127,7 @@ export function Home() {
             return;
         }
 
+        
         setRightTile(droppedTile);
     };
 
