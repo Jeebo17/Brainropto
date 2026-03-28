@@ -216,9 +216,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           },
           runningMode: 'VIDEO',
           numPoses: 1,
-          minPoseDetectionConfidence: 0.1,
-          minPosePresenceConfidence: 0.1,
-          minTrackingConfidence: 0.1,
+          minPoseDetectionConfidence: 0.3,
+          minPosePresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3,
         });
         if (cancelled) {
           landmarker.close();
