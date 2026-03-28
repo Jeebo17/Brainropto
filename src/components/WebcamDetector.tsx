@@ -123,6 +123,7 @@ interface WebcamDetectorProps {
 export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const captureVideoRef = useRef<HTMLVideoElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
+  const debugOverlayRef = useRef<HTMLCanvasElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const playerShellRef = useRef<HTMLDivElement>(null);
@@ -256,6 +257,67 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
     // Don't clear history for temporarily lost hands — let time window handle expiry
 
+    // Draw hand detection overlay on the debug crop canvas
+    const debugCanvas = debugOverlayRef.current;
+    if (debugCanvas) {
+      const cropCanvas = cropCanvasRef.current;
+      if (cropCanvas && cropCanvas.width > 0) {
+        debugCanvas.width = cropCanvas.width;
+        debugCanvas.height = cropCanvas.height;
+      }
+      const dCtx = debugCanvas.getContext('2d');
+      if (dCtx) {
+        dCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+
+        detectedHands.forEach((hand, handIndex) => {
+          const color = handIndex === 0 ? '#22c55e' : '#f59e0b';
+          const dxs = hand.map((p) => p.x);
+          const dys = hand.map((p) => p.y);
+          const dMinX = Math.min(...dxs) * debugCanvas.width;
+          const dMaxX = Math.max(...dxs) * debugCanvas.width;
+          const dMinY = Math.min(...dys) * debugCanvas.height;
+          const dMaxY = Math.max(...dys) * debugCanvas.height;
+
+          // Bounding box
+          dCtx.strokeStyle = color;
+          dCtx.lineWidth = 2;
+          dCtx.strokeRect(dMinX - 8, dMinY - 8, dMaxX - dMinX + 16, dMaxY - dMinY + 16);
+
+          // Label
+          dCtx.fillStyle = color;
+          dCtx.fillRect(dMinX - 8, dMinY - 30, 70, 20);
+          dCtx.fillStyle = '#fff';
+          dCtx.font = 'bold 12px sans-serif';
+          dCtx.fillText(`Hand ${handIndex + 1}`, dMinX - 3, dMinY - 15);
+
+          // Landmarks
+          for (const point of hand) {
+            dCtx.beginPath();
+            dCtx.arc(point.x * debugCanvas.width, point.y * debugCanvas.height, 2, 0, 2 * Math.PI);
+            dCtx.fillStyle = '#60a5fa';
+            dCtx.fill();
+          }
+        });
+
+        // Draw wrist trails from history
+        for (let h = 0; h < 2; h++) {
+          const trail = handHistoriesRef.current[h];
+          if (trail.length < 2) continue;
+          const color = h === 0 ? '#22c55e' : '#f59e0b';
+          dCtx.beginPath();
+          dCtx.moveTo(trail[0].x * debugCanvas.width, trail[0].y * debugCanvas.height);
+          for (let t = 1; t < trail.length; t++) {
+            dCtx.lineTo(trail[t].x * debugCanvas.width, trail[t].y * debugCanvas.height);
+          }
+          dCtx.strokeStyle = color;
+          dCtx.lineWidth = 2;
+          dCtx.globalAlpha = 0.5;
+          dCtx.stroke();
+          dCtx.globalAlpha = 1.0;
+        }
+      }
+    }
+
     // Run gesture detection
     const gesture = detectGesture(handHistoriesRef.current, handCount);
     if (gesture && now - lastGestureTimeRef.current[gesture] > GESTURE_COOLDOWN_MS) {
@@ -379,10 +441,15 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     hands.onResults(drawResults);
     handsRef.current = hands;
 
+    // Offscreen canvas for flicker-free cropping
+    const offscreen = document.createElement('canvas');
+    const offCtx = offscreen.getContext('2d');
     const cropCtx = cropCanvas.getContext('2d');
+    let lastCropW = 0;
+    let lastCropH = 0;
 
     const loop = async () => {
-      if (cancelled || !captureVideoRef.current || !handsRef.current || !cropCtx) return;
+      if (cancelled || !captureVideoRef.current || !handsRef.current || !cropCtx || !offCtx) return;
 
       const currentVideo = captureVideoRef.current;
 
@@ -410,31 +477,32 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           // Source crop region in captured video coordinates
           const sx = rect.left * scaleX;
           const sy = rect.top * scaleY;
-          const sw = rect.width * scaleX;
-          const sh = rect.height * scaleY;
+          const sw = Math.floor(rect.width * scaleX);
+          const sh = Math.floor(rect.height * scaleY);
 
-          // Set crop canvas to match the player region
-          cropCanvas.width = Math.floor(sw);
-          cropCanvas.height = Math.floor(sh);
+          // Only resize canvases when dimensions change (avoids clearing)
+          if (sw !== lastCropW || sh !== lastCropH) {
+            offscreen.width = sw;
+            offscreen.height = sh;
+            cropCanvas.width = sw;
+            cropCanvas.height = sh;
+            lastCropW = sw;
+            lastCropH = sh;
+          }
 
-          // Hide overlay so it doesn't appear in the captured frame
-          if (overlay) overlay.style.visibility = 'hidden';
-
-          // Wait one frame for the overlay to actually be hidden in the capture
-          await new Promise((r) => requestAnimationFrame(r));
-
-          // Draw the cropped region
-          cropCtx.drawImage(
+          // Draw cropped region to offscreen canvas
+          offCtx.drawImage(
             currentVideo,
             sx, sy, sw, sh,
-            0, 0, cropCanvas.width, cropCanvas.height
+            0, 0, sw, sh
           );
 
-          // Show overlay again
-          if (overlay) overlay.style.visibility = 'visible';
+          // Copy offscreen to visible crop canvas in one operation (no flicker)
+          cropCtx.clearRect(0, 0, sw, sh);
+          cropCtx.drawImage(offscreen, 0, 0);
 
-          // Feed cropped frame to MediaPipe
-          await handsRef.current.send({ image: cropCanvas });
+          // Feed offscreen frame to MediaPipe
+          await handsRef.current.send({ image: offscreen });
           setIsAnalyzing(true);
         } finally {
           frameInFlightRef.current = false;
@@ -487,15 +555,22 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
         className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
       />
 
-      {/* Debug: shows exactly what MediaPipe receives (the cropped frame) */}
+      {/* Debug: shows cropped frame with hand detection overlay */}
       {isSharing && (
         <div className="rounded-lg border border-yellow-400 p-2">
-          <p className="text-xs font-semibold text-yellow-600 mb-1">DEBUG: Cropped frame sent to MediaPipe</p>
-          <canvas
-            ref={cropCanvasRef}
-            className="w-full rounded bg-black"
-            style={{ maxHeight: '200px', objectFit: 'contain' }}
-          />
+          <p className="text-xs font-semibold text-yellow-600 mb-1">DEBUG: MediaPipe input + hand detection</p>
+          <div className="relative" style={{ maxHeight: '200px' }}>
+            <canvas
+              ref={cropCanvasRef}
+              className="w-full rounded bg-black"
+              style={{ maxHeight: '200px', objectFit: 'contain' }}
+            />
+            <canvas
+              ref={debugOverlayRef}
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              style={{ maxHeight: '200px', objectFit: 'contain' }}
+            />
+          </div>
         </div>
       )}
       {!isSharing && (
