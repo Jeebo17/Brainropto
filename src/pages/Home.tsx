@@ -139,19 +139,13 @@ export function Home() {
 
         setRightTile(null);
     };
-  
+
     const handleGesture = useCallback((gesture: '67' | 'rickroll') => {
         console.log(`[Home] Gesture event received: ${gesture}`);
         // TODO: Wire up UI responses here
         // gesture === '67' → trigger 67 effect
         // gesture === 'rickroll' → trigger rickroll effect
     }, []);
-
-    const handleLeftVideoUpload = (file: File | null) => {
-        if (!file) {
-        if (leftVideo) URL.revokeObjectURL(leftVideo);
-        setLeftVideo(null);
-        return;
 
     return (
         <main className="w-full max-w-none h-[calc(100vh-88px)] bg-[#061126] text-slate-100">
