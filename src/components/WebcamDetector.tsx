@@ -27,6 +27,7 @@ export function WebcamDetector() {
   const panoptoTimeRef = useRef<number | null>(null);
   const panoptoPlayingRef = useRef(false);
 
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sessionInput, setSessionInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [analysisVideoUrl, setAnalysisVideoUrl] = useState<string | null>(null);
@@ -34,8 +35,21 @@ export function WebcamDetector() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [handPosition, setHandPosition] = useState<HandPoint | null>(null);
   const [statusText, setStatusText] = useState(
-    'Paste a Panopto link or session ID to load the lecture.'
+    'Log in with Panopto to get started.'
   );
+
+  // Check auth status on mount and after redirect back
+  useEffect(() => {
+    fetch(`${API_BASE}/auth/status`)
+      .then((res) => res.json())
+      .then((data) => {
+        setIsAuthenticated(data.authenticated);
+        if (data.authenticated) {
+          setStatusText('Paste a Panopto link or session ID to load the lecture.');
+        }
+      })
+      .catch(() => setStatusText('Cannot connect to server. Is it running on port 3001?'));
+  }, []);
   const [panoptoTime, setPanoptoTime] = useState<number | null>(null);
   const [panoptoPlaying, setPanoptoPlaying] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(true);
@@ -326,43 +340,53 @@ export function WebcamDetector() {
       </div>
 
       <div className="rounded-lg border border-gray-200 p-3">
-        <p className="text-sm text-gray-700">
-          Paste a Panopto lecture link or session ID. The server will fetch the video via the
-          Panopto API for MediaPipe analysis while you watch the embedded player.
-        </p>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <input
-            type="text"
-            value={sessionInput}
-            onChange={(e) => setSessionInput(e.target.value)}
-            placeholder="https://uniofbath.cloud.panopto.eu/...?id=xxxx or session GUID"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
-          />
-          <button
-            type="button"
-            onClick={handleLoadSession}
-            disabled={isLoading}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {isLoading ? 'Loading...' : 'Load'}
-          </button>
-          <button
-            type="button"
-            onClick={handleStartTracker}
-            disabled={!analysisVideoUrl}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-          >
-            Start Tracker
-          </button>
-        </div>
-        <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={syncEnabled}
-            onChange={(e) => setSyncEnabled(e.target.checked)}
-          />
-          Keep hidden tracker synced to Panopto timeline
-        </label>
+        {!isAuthenticated ? (
+          <>
+            <p className="text-sm text-gray-700">
+              Log in with your University of Bath Panopto account to enable hand tracking.
+            </p>
+            <div className="mt-3">
+              <a
+                href={`${API_BASE}/auth/login`}
+                className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Login with Panopto
+              </a>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-700">
+              Paste a Panopto lecture link or session ID. The server will fetch the video via the
+              Panopto API for MediaPipe analysis while you watch the embedded player.
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                type="text"
+                value={sessionInput}
+                onChange={(e) => setSessionInput(e.target.value)}
+                placeholder="https://uniofbath.cloud.panopto.eu/...?id=xxxx or session GUID"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              />
+              <button
+                type="button"
+                onClick={handleLoadSession}
+                disabled={isLoading}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isLoading ? 'Loading...' : 'Load'}
+              </button>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={syncEnabled}
+                onChange={(e) => setSyncEnabled(e.target.checked)}
+              />
+              Keep hidden tracker synced to Panopto timeline
+            </label>
+          </>
+        )}
       </div>
 
       {/* Hidden mirror video used for MediaPipe analysis only */}

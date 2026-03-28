@@ -1,45 +1,120 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import fetch from 'node-fetch';
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 const PANOPTO_BASE = 'https://uniofbath.cloud.panopto.eu';
 const CLIENT_ID = process.env.PANOPTO_CLIENT_ID;
 const CLIENT_SECRET = process.env.PANOPTO_CLIENT_SECRET;
+const REDIRECT_URI = 'http://localhost:3001/auth/callback';
 
-let cachedToken = null;
+// In-memory token storage (single user for now)
+let accessToken = null;
+let refreshToken = null;
 let tokenExpiry = 0;
 
-async function getAccessToken() {
-  if (cachedToken && Date.now() < tokenExpiry) {
-    return cachedToken;
-  }
+// ---------- Auth routes ----------
 
-  const res = await fetch(`${PANOPTO_BASE}/Panopto/oauth2/connect/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-    }),
+// Step 1: Redirect user to Panopto login
+app.get('/auth/login', (req, res) => {
+  const state = crypto.randomBytes(16).toString('hex');
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    scope: 'openid api',
+    state,
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OAuth token request failed (${res.status}): ${text}`);
+  res.redirect(`${PANOPTO_BASE}/Panopto/oauth2/connect/authorize?${params}`);
+});
+
+// Step 2: Panopto redirects back here with an auth code
+app.get('/auth/callback', async (req, res) => {
+  const { code, error } = req.query;
+
+  if (error || !code) {
+    return res.status(400).send(`Auth failed: ${error || 'no code received'}`);
   }
 
-  const data = await res.json();
-  cachedToken = data.access_token;
-  // Expire 60s early to be safe
-  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
-  return cachedToken;
+  try {
+    const tokenRes = await fetch(`${PANOPTO_BASE}/Panopto/oauth2/connect/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT_URI,
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+      }),
+    });
+
+    const text = await tokenRes.text();
+    console.log('Token response status:', tokenRes.status);
+    console.log('Token response body:', text);
+
+    if (!tokenRes.ok) {
+      return res.status(400).send(`Token exchange failed (${tokenRes.status}): ${text}`);
+    }
+
+    const data = JSON.parse(text);
+    accessToken = data.access_token;
+    refreshToken = data.refresh_token || null;
+    tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+
+    // Redirect to the frontend app
+    res.redirect('http://localhost:5173');
+  } catch (err) {
+    console.error('Callback error:', err);
+    res.status(500).send(`Callback error: ${err.message}`);
+  }
+});
+
+// Check if user is authenticated
+app.get('/auth/status', (req, res) => {
+  res.json({ authenticated: !!accessToken && Date.now() < tokenExpiry });
+});
+
+// ---------- Token helper ----------
+
+async function getAccessToken() {
+  if (accessToken && Date.now() < tokenExpiry) {
+    return accessToken;
+  }
+
+  // Try refresh if we have a refresh token
+  if (refreshToken) {
+    console.log('Refreshing access token...');
+    const res = await fetch(`${PANOPTO_BASE}/Panopto/oauth2/connect/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      accessToken = data.access_token;
+      refreshToken = data.refresh_token || refreshToken;
+      tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+      return accessToken;
+    }
+  }
+
+  throw new Error('Not authenticated. Visit http://localhost:3001/auth/login first.');
 }
+
+// ---------- API routes ----------
 
 // GET /api/video/:sessionId — returns a stream URL for the given Panopto session
 app.get('/api/video/:sessionId', async (req, res) => {
@@ -82,7 +157,6 @@ app.get('/api/video/:sessionId', async (req, res) => {
 
       if (sessionRes.ok) {
         const session = await sessionRes.json();
-        // The IOS/MP4 podcast URL is often available
         if (session.Urls?.PodcastUrl) {
           videoUrl = session.Urls.PodcastUrl;
         } else if (session.Urls?.StreamUrl) {
@@ -136,4 +210,5 @@ app.get('/api/sessions/search', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Panopto proxy server running on http://localhost:${PORT}`);
+  console.log(`Login at: http://localhost:${PORT}/auth/login`);
 });
