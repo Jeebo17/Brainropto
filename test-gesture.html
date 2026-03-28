@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Gesture Test - Webcam</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
+    video { border-radius: 8px; }
+    canvas { border-radius: 8px; }
+    #status { font-size: 24px; margin: 16px 0; }
+    .gesture-alert {
+      display: none;
+      font-size: 48px;
+      font-weight: bold;
+      padding: 20px;
+      border: 4px solid;
+      border-radius: 12px;
+      text-align: center;
+      animation: pulse 0.5s ease-in-out;
+      margin-bottom: 8px;
+    }
+    #alert-67 { color: #22c55e; border-color: #22c55e; }
+    #alert-rickroll { color: #f43f5e; border-color: #f43f5e; }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    #debug { font-size: 14px; color: #999; margin-top: 12px; }
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .panel { background: #2a2a2a; padding: 16px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Gesture Detection Test (Webcam)</h1>
+  <p><b>67:</b> Move one hand up and down (2 pumps in 5 seconds)</p>
+  <p><b>Rickroll:</b> Move both hands side to side (2 sweeps in 5 seconds)</p>
+
+  <div id="alert-67" class="gesture-alert">67 DETECTED!</div>
+  <div id="alert-rickroll" class="gesture-alert">RICKROLL DETECTED!</div>
+
+  <div class="container">
+    <div class="panel">
+      <h3>Webcam Feed</h3>
+      <video id="webcam" width="640" height="480" autoplay muted playsinline></video>
+    </div>
+    <div class="panel">
+      <h3>Hand Landmarks</h3>
+      <canvas id="overlay" width="640" height="480"></canvas>
+    </div>
+  </div>
+
+  <div id="status">Status: Loading MediaPipe...</div>
+  <div id="debug"></div>
+  <div id="log" style="margin-top: 16px; font-size: 14px; max-height: 200px; overflow-y: auto;"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const debugEl = document.getElementById('debug');
+    const logEl = document.getElementById('log');
+    const alert67 = document.getElementById('alert-67');
+    const alertRickroll = document.getElementById('alert-rickroll');
+
+    // -- Gesture detection config --
+    const GESTURE_WINDOW_MS = 5000;
+    const MIN_DISPLACEMENT_Y = 0.10; // for 67 (up-down)
+    const MIN_DISPLACEMENT_X = 0.08; // for rickroll (side-to-side)
+    const REQUIRED_REVERSALS = 4; // 2 full pumps/sweeps
+    const COOLDOWN_MS = 3000;
+
+    const handHistories = [[], []];
+    let lastGestureTime = { '67': 0, 'rickroll': 0 };
+
+    function countReversals(values, minDisplacement) {
+      if (values.length < 3) return 0;
+      let reversals = 0;
+      let lastDir = null;
+      let lastAnchor = values[0];
+
+      for (let i = 1; i < values.length; i++) {
+        const delta = values[i] - lastAnchor;
+        if (Math.abs(delta) < minDisplacement) continue;
+        const dir = delta > 0 ? 'up' : 'down';
+        if (lastDir !== null && dir !== lastDir) {
+          reversals++;
+        }
+        lastDir = dir;
+        lastAnchor = values[i];
+      }
+      return reversals;
+    }
+
+    function addLog(msg) {
+      const line = document.createElement('div');
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.prepend(line);
+      if (logEl.children.length > 50) logEl.lastChild.remove();
+    }
+
+    function showAlert(type) {
+      const el = type === '67' ? alert67 : alertRickroll;
+      el.style.display = 'block';
+      el.style.animation = 'none';
+      el.offsetHeight; // force reflow
+      el.style.animation = 'pulse 0.5s ease-in-out';
+      setTimeout(() => { el.style.display = 'none'; }, 2000);
+    }
+
+    // -- MediaPipe setup --
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+
+    hands.onResults((results) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw the webcam frame on the canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+        statusEl.textContent = 'Status: No hands detected';
+        // Don't clear histories immediately — let them expire naturally via time window
+        return;
+      }
+
+      const now = Date.now();
+      let hands = results.multiHandLandmarks;
+
+      // Filter out phantom double-detections: if two "hands" have wrists too close,
+      // treat it as one hand
+      const MIN_HAND_DISTANCE = 0.25; // normalized — hands must be at least 25% of frame apart
+      if (hands.length >= 2) {
+        const wrist0 = hands[0][0];
+        const wrist1 = hands[1][0];
+        const dist = Math.sqrt((wrist0.x - wrist1.x) ** 2 + (wrist0.y - wrist1.y) ** 2);
+        if (dist < MIN_HAND_DISTANCE) {
+          hands = [hands[0]]; // keep only the first, discard the phantom
+        }
+      }
+
+      const handCount = hands.length;
+
+      hands.forEach((hand, handIndex) => {
+        // Draw bounding box
+        const xs = hand.map(p => p.x);
+        const ys = hand.map(p => p.y);
+        const minX = Math.min(...xs) * canvas.width;
+        const maxX = Math.max(...xs) * canvas.width;
+        const minY = Math.min(...ys) * canvas.height;
+        const maxY = Math.max(...ys) * canvas.height;
+
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(minX - 10, minY - 10, maxX - minX + 20, maxY - minY + 20);
+
+        // Draw landmarks
+        for (const point of hand) {
+          ctx.beginPath();
+          ctx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
+          ctx.fillStyle = '#60a5fa';
+          ctx.fill();
+        }
+
+        // Track wrist history
+        const wrist = hand[0];
+        if (handIndex < 2) {
+          const history = handHistories[handIndex];
+          history.push({ x: wrist.x, y: wrist.y, time: now });
+          const cutoff = now - GESTURE_WINDOW_MS;
+          while (history.length > 0 && history[0].time < cutoff) {
+            history.shift();
+          }
+        }
+      });
+
+      // Don't clear history for temporarily lost hands — let time window handle expiry
+
+      // Check for 67 gesture (both hands pumping Y in OPPOSITE directions)
+      let yRev0 = 0, yRev1 = 0;
+      if (handHistories[0].length >= 3) yRev0 = countReversals(handHistories[0].map(p => p.y), MIN_DISPLACEMENT_Y);
+      if (handHistories[1].length >= 3) yRev1 = countReversals(handHistories[1].map(p => p.y), MIN_DISPLACEMENT_Y);
+      const maxYReversals = Math.max(yRev0, yRev1);
+
+      let is67 = false;
+      let oppositeRatio = 0;
+      if (yRev0 >= REQUIRED_REVERSALS && yRev1 >= REQUIRED_REVERSALS) {
+        // Check hands move in opposite Y directions by correlating their positions over time
+        // Sample both histories at matching timestamps
+        const h0 = handHistories[0];
+        const h1 = handHistories[1];
+
+        // Build paired samples: for each entry in h0, find the closest-in-time entry in h1
+        let oppositeCount = 0;
+        let totalCount = 0;
+        let j = 0;
+        for (let i = 1; i < h0.length; i++) {
+          // Advance j to closest timestamp in h1
+          while (j < h1.length - 1 && Math.abs(h1[j + 1].time - h0[i].time) < Math.abs(h1[j].time - h0[i].time)) {
+            j++;
+          }
+          if (j === 0) continue;
+
+          // Find the previous h0 entry and its paired h1 entry
+          let prevJ = 0;
+          for (let k = 0; k < h1.length - 1; k++) {
+            if (Math.abs(h1[k].time - h0[i - 1].time) < Math.abs(h1[prevJ].time - h0[i - 1].time)) {
+              prevJ = k;
+            }
+          }
+
+          const dy0 = h0[i].y - h0[i - 1].y;
+          const dy1 = h1[j].y - h1[prevJ].y;
+
+          if (Math.abs(dy0) > 0.01 && Math.abs(dy1) > 0.01) {
+            totalCount++;
+            if ((dy0 > 0 && dy1 < 0) || (dy0 < 0 && dy1 > 0)) {
+              oppositeCount++;
+            }
+          }
+        }
+        oppositeRatio = totalCount > 0 ? oppositeCount / totalCount : 0;
+        is67 = oppositeRatio >= 0.4;
+      }
+
+      // Check for rickroll gesture (X-axis reversals on BOTH hands)
+      // Use history length instead of current handCount — tolerates flickering detection
+      let minXReversals = 0;
+      if (handHistories[0].length >= 3 && handHistories[1].length >= 3) {
+        const xRev0 = countReversals(handHistories[0].map(p => p.x), MIN_DISPLACEMENT_X);
+        const xRev1 = countReversals(handHistories[1].map(p => p.x), MIN_DISPLACEMENT_X);
+        minXReversals = Math.min(xRev0, xRev1);
+      }
+
+      debugEl.textContent = `Hands: ${handCount} | History: [${handHistories[0].length}, ${handHistories[1].length}] | Y rev: [${yRev0}, ${yRev1}]/${REQUIRED_REVERSALS} opp: ${(oppositeRatio * 100).toFixed(0)}% (need 40%) | X rev (both): ${minXReversals}/${REQUIRED_REVERSALS}`;
+
+      // Rickroll: X reversals on both hands, but NOT if there's significant Y movement (that's a 67)
+      const rickrollBlocked = yRev0 >= REQUIRED_REVERSALS || yRev1 >= REQUIRED_REVERSALS;
+      if (minXReversals >= REQUIRED_REVERSALS && !rickrollBlocked && now - lastGestureTime.rickroll > COOLDOWN_MS) {
+        lastGestureTime.rickroll = now;
+        statusEl.textContent = 'Status: RICKROLL DETECTED!';
+        addLog('Rickroll gesture detected!');
+        showAlert('rickroll');
+        handHistories[0] = [];
+        handHistories[1] = [];
+      } else if (is67 && now - lastGestureTime['67'] > COOLDOWN_MS) {
+        lastGestureTime['67'] = now;
+        statusEl.textContent = 'Status: 67 DETECTED!';
+        addLog('67 gesture detected!');
+        showAlert('67');
+        handHistories[0] = [];
+        handHistories[1] = [];
+      } else {
+        statusEl.textContent = `Status: Tracking | 67: ${maxYReversals}/${REQUIRED_REVERSALS} | Rickroll: ${minXReversals}/${REQUIRED_REVERSALS}`;
+      }
+    });
+
+    // -- Start webcam --
+    async function start() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+        });
+        video.srcObject = stream;
+        statusEl.textContent = 'Status: Webcam active, loading model...';
+
+        // Wait for video to be ready, then start sending frames
+        video.addEventListener('loadeddata', () => {
+          statusEl.textContent = 'Status: Tracking hands...';
+          addLog('Webcam started, MediaPipe loaded');
+
+          async function loop() {
+            if (video.readyState >= 2) {
+              await hands.send({ image: video });
+            }
+            requestAnimationFrame(loop);
+          }
+          loop();
+        });
+      } catch (err) {
+        statusEl.textContent = `Status: Webcam error — ${err.message}`;
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>

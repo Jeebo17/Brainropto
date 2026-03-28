@@ -16,7 +16,111 @@ function extractSessionId(input: string): string | null {
   return match ? match[0] : null;
 }
 
-export function WebcamDetector() {
+type GestureType = '67' | 'rickroll';
+
+type PositionEntry = { x: number; y: number; time: number };
+
+const GESTURE_WINDOW_MS = 5000; // 5 second window
+const MIN_DISPLACEMENT_Y = 0.10; // for 67 (up-down)
+const MIN_DISPLACEMENT_X = 0.08; // for rickroll (side-to-side)
+const REQUIRED_REVERSALS = 4; // 2 full pumps/sweeps = 4 direction changes
+const GESTURE_COOLDOWN_MS = 3000; // 3 seconds between same gesture events
+
+// Count direction reversals along one axis within a position history
+function countReversals(values: number[], minDisplacement: number): number {
+  if (values.length < 3) return 0;
+
+  let reversals = 0;
+  let lastDir: 'up' | 'down' | null = null;
+  let lastAnchor = values[0];
+
+  for (let i = 1; i < values.length; i++) {
+    const delta = values[i] - lastAnchor;
+    if (Math.abs(delta) < minDisplacement) continue;
+
+    const dir = delta > 0 ? 'up' : 'down';
+    if (lastDir !== null && dir !== lastDir) {
+      reversals++;
+    }
+    lastDir = dir;
+    lastAnchor = values[i];
+  }
+
+  return reversals;
+}
+
+function detectGesture(
+  handHistories: PositionEntry[][],
+  handCount: number,
+): GestureType | null {
+  // 67: both hands pumping up and down in OPPOSITE directions
+  if (handHistories.length >= 2 && handHistories[0].length >= 3 && handHistories[1].length >= 3) {
+    const yRev0 = countReversals(handHistories[0].map((p) => p.y), MIN_DISPLACEMENT_Y);
+    const yRev1 = countReversals(handHistories[1].map((p) => p.y), MIN_DISPLACEMENT_Y);
+
+    if (yRev0 >= REQUIRED_REVERSALS && yRev1 >= REQUIRED_REVERSALS) {
+      // Correlate Y movement by matching timestamps between the two hand histories
+      const h0 = handHistories[0];
+      const h1 = handHistories[1];
+
+      let oppositeCount = 0;
+      let totalCount = 0;
+      let j = 0;
+      for (let i = 1; i < h0.length; i++) {
+        while (j < h1.length - 1 && Math.abs(h1[j + 1].time - h0[i].time) < Math.abs(h1[j].time - h0[i].time)) {
+          j++;
+        }
+        if (j === 0) continue;
+
+        let prevJ = 0;
+        for (let k = 0; k < h1.length - 1; k++) {
+          if (Math.abs(h1[k].time - h0[i - 1].time) < Math.abs(h1[prevJ].time - h0[i - 1].time)) {
+            prevJ = k;
+          }
+        }
+
+        const dy0 = h0[i].y - h0[i - 1].y;
+        const dy1 = h1[j].y - h1[prevJ].y;
+
+        if (Math.abs(dy0) > 0.01 && Math.abs(dy1) > 0.01) {
+          totalCount++;
+          if ((dy0 > 0 && dy1 < 0) || (dy0 < 0 && dy1 > 0)) {
+            oppositeCount++;
+          }
+        }
+      }
+
+      if (totalCount > 0 && oppositeCount / totalCount >= 0.4) {
+        return '67';
+      }
+    }
+  }
+
+  // Rickroll: both hands moving side to side (X-axis reversals on both)
+  // But NOT if there's significant Y movement (that's a 67, not a rickroll)
+  if (handHistories.length >= 2) {
+    const yRev0 = countReversals(handHistories[0].map((p) => p.y), MIN_DISPLACEMENT_Y);
+    const yRev1 = countReversals(handHistories[1].map((p) => p.y), MIN_DISPLACEMENT_Y);
+    const hasSignificantY = yRev0 >= REQUIRED_REVERSALS || yRev1 >= REQUIRED_REVERSALS;
+
+    if (!hasSignificantY) {
+      const bothHaveSweeps = handHistories.slice(0, 2).every((history) => {
+        if (history.length < 3) return false;
+        const xValues = history.map((p) => p.x);
+        return countReversals(xValues, MIN_DISPLACEMENT_X) >= REQUIRED_REVERSALS;
+      });
+      if (bothHaveSweeps) return 'rickroll';
+    }
+  }
+
+  return null;
+}
+
+interface WebcamDetectorProps {
+  onGesture?: (gesture: GestureType) => void;
+}
+
+export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const captureVideoRef = useRef<HTMLVideoElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -26,8 +130,13 @@ export function WebcamDetector() {
   const animationFrameRef = useRef<number | null>(null);
   const frameInFlightRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const handHistoriesRef = useRef<PositionEntry[][]>([[], []]);
+  const lastGestureTimeRef = useRef<Record<GestureType, number>>({ '67': 0, rickroll: 0 });
+  const onGestureRef = useRef(onGesture);
+  onGestureRef.current = onGesture;
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [lastGesture, setLastGesture] = useState<string | null>(null);
   const [sessionInput, setSessionInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
@@ -83,7 +192,23 @@ export function WebcamDetector() {
       return;
     }
 
-    results.multiHandLandmarks.forEach((hand) => {
+    const now = Date.now();
+    let detectedHands = results.multiHandLandmarks;
+
+    // Filter phantom double-detections: if two "hands" have wrists too close, treat as one
+    const MIN_HAND_DISTANCE = 0.25;
+    if (detectedHands.length >= 2) {
+      const wrist0 = detectedHands[0][0];
+      const wrist1 = detectedHands[1][0];
+      const dist = Math.sqrt((wrist0.x - wrist1.x) ** 2 + (wrist0.y - wrist1.y) ** 2);
+      if (dist < MIN_HAND_DISTANCE) {
+        detectedHands = [detectedHands[0]];
+      }
+    }
+
+    const handCount = detectedHands.length;
+
+    detectedHands.forEach((hand, handIndex) => {
       const xs = hand.map((p) => p.x);
       const ys = hand.map((p) => p.y);
 
@@ -116,7 +241,31 @@ export function WebcamDetector() {
 
       const wrist = hand[0];
       setHandPosition({ x: wrist.x, y: wrist.y, z: wrist.z });
+
+      // Track wrist position history for gesture detection
+      if (handIndex < 2) {
+        const history = handHistoriesRef.current[handIndex];
+        history.push({ x: wrist.x, y: wrist.y, time: now });
+        // Trim to 5 second window
+        const cutoff = now - GESTURE_WINDOW_MS;
+        while (history.length > 0 && history[0].time < cutoff) {
+          history.shift();
+        }
+      }
     });
+
+    // Don't clear history for temporarily lost hands — let time window handle expiry
+
+    // Run gesture detection
+    const gesture = detectGesture(handHistoriesRef.current, handCount);
+    if (gesture && now - lastGestureTimeRef.current[gesture] > GESTURE_COOLDOWN_MS) {
+      lastGestureTimeRef.current[gesture] = now;
+      setLastGesture(gesture);
+      console.log(`[Gesture Detected] ${gesture}`);
+      onGestureRef.current?.(gesture);
+      // Clear histories after firing to avoid re-triggering
+      handHistoriesRef.current = [[], []];
+    }
   }, []);
 
   useEffect(() => {
@@ -330,17 +479,31 @@ export function WebcamDetector() {
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
       </div>
 
-      {/* Hidden elements for tab capture processing */}
+      {/* Hidden video for tab capture */}
       <video
         ref={captureVideoRef}
         muted
         playsInline
         className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
       />
-      <canvas
-        ref={cropCanvasRef}
-        className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
-      />
+
+      {/* Debug: shows exactly what MediaPipe receives (the cropped frame) */}
+      {isSharing && (
+        <div className="rounded-lg border border-yellow-400 p-2">
+          <p className="text-xs font-semibold text-yellow-600 mb-1">DEBUG: Cropped frame sent to MediaPipe</p>
+          <canvas
+            ref={cropCanvasRef}
+            className="w-full rounded bg-black"
+            style={{ maxHeight: '200px', objectFit: 'contain' }}
+          />
+        </div>
+      )}
+      {!isSharing && (
+        <canvas
+          ref={cropCanvasRef}
+          className="absolute left-[-9999px] top-[-9999px] h-1 w-1 opacity-0"
+        />
+      )}
 
       <div className="rounded-lg border border-gray-200 p-3">
         {!isAuthenticated ? (
@@ -416,6 +579,10 @@ export function WebcamDetector() {
           {handPosition
             ? `x ${(handPosition.x * 100).toFixed(1)}%, y ${(handPosition.y * 100).toFixed(1)}%, z ${handPosition.z.toFixed(3)}`
             : 'Not detected'}
+        </p>
+        <p>
+          <span className="font-semibold">Last gesture:</span>{' '}
+          {lastGesture ?? 'None'}
         </p>
       </div>
     </div>

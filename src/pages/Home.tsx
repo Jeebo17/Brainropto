@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { WebcamDetector } from '../components/WebcamDetector';
 
 export function Home() {
     const [leftVideo, setLeftVideo] = useState<string | null>(null);
     const [rightVideo, setRightVideo] = useState<string | null>(null);
+
+    const handleGesture = useCallback((gesture: '67' | 'rickroll') => {
+        console.log(`[Home] Gesture event received: ${gesture}`);
+        // TODO: Wire up UI responses here
+        // gesture === '67' → trigger 67 effect
+        // gesture === 'rickroll' → trigger rickroll effect
+    }, []);
 
     const handleLeftVideoUpload = (file: File | null) => {
         if (!file) {
@@ -35,7 +42,7 @@ export function Home() {
                     videoUrl={leftVideo}
                 />
 
-                <WebcamDetector />
+                <WebcamDetector onGesture={handleGesture} />
 
                 <VideoPlayer
                     position="right"
