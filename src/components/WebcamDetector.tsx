@@ -468,7 +468,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       setStatusText('Load a video first.');
       return;
     }
-    new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
+    // new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' } as MediaTrackConstraints,
