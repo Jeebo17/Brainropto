@@ -1,19 +1,45 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
-
 type HandPoint = {
   x: number;
   y: number;
   z: number;
 };
 
+type VideoType = 'panopto' | 'youtube' | 'other';
+
 // Extract session ID from a Panopto URL or bare GUID
 function extractSessionId(input: string): string | null {
   const guidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
   const match = input.match(guidPattern);
   return match ? match[0] : null;
+}
+
+// Build an embed URL from a Panopto, YouTube, or direct URL
+function buildEmbedUrl(input: string): { url: string; type: VideoType } | null {
+  const trimmed = input.trim();
+
+  // Panopto
+  if (trimmed.toLowerCase().includes('panopto')) {
+    const id = extractSessionId(trimmed);
+    if (id) return {
+      url: `https://uniofbath.cloud.panopto.eu/Panopto/Pages/Embed.aspx?id=${id}&autoplay=false&offerviewer=true&showtitle=false&showbrand=false&captions=false&interactivity=all`,
+      type: 'panopto',
+    };
+  }
+
+  // YouTube
+  const ytMatch = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]+)/);
+  if (ytMatch) return {
+    url: `https://www.youtube.com/embed/${ytMatch[1]}`,
+    type: 'youtube',
+  };
+
+  // Already an embed URL or direct URL
+  if (trimmed.startsWith('http')) return { url: trimmed, type: 'other' };
+
+  return null;
 }
 
 type GestureType = '67' | 'rickroll';
@@ -156,30 +182,18 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const onGestureRef = useRef(onGesture);
   onGestureRef.current = onGesture;
 
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [modelReady, setModelReady] = useState(false);
   const [lastGesture, setLastGesture] = useState<string | null>(null);
-  const [sessionInput, setSessionInput] = useState('');
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [videoInput, setVideoInput] = useState('');
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
+  const [videoType, setVideoType] = useState<VideoType>('other');
+  const videoTypeRef = useRef<VideoType>('other');
   const [isSharing, setIsSharing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [handPosition, setHandPosition] = useState<HandPoint | null>(null);
   const [statusText, setStatusText] = useState(
-    'Log in with Panopto to get started.'
+    'Loading pose detection model...'
   );
-
-  // Check auth status on mount
-  useEffect(() => {
-    fetch(`${API_BASE}/auth/status`)
-      .then((res) => res.json())
-      .then((data) => {
-        setIsAuthenticated(data.authenticated);
-        if (data.authenticated) {
-          setStatusText('Loading hand detection model...');
-        }
-      })
-      .catch(() => setStatusText('Cannot connect to server. Is it running on port 3001?'));
-  }, []);
 
   // Initialize HandLandmarker model on mount
   useEffect(() => {
@@ -211,7 +225,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
         poseLandmarkerRef.current = landmarker;
         setModelReady(true);
-        setStatusText('Model loaded. Paste a Panopto link or session ID.');
+        setStatusText('Model loaded. Paste a Panopto or YouTube link.');
       } catch (err) {
         console.error('Failed to load PoseLandmarker:', err);
         setStatusText(`Model load failed: ${(err as Error).message}`);
@@ -228,9 +242,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     };
   }, []);
 
-  const panoptoEmbedUrl = sessionId
-    ? `https://uniofbath.cloud.panopto.eu/Panopto/Pages/Embed.aspx?id=${sessionId}&autoplay=false&offerviewer=true&showtitle=false&showbrand=false&captions=false&interactivity=all`
-    : null;
+  // Overlay scaleX: Panopto uses left half (0.5), YouTube/other uses full frame (1.0)
+  const overlayScaleXRef = useRef(1.0);
+  overlayScaleXRef.current = videoType === 'panopto' ? 0.5 : 1.0;
 
   const syncCanvasToPlayerSize = () => {
     const shell = playerShellRef.current;
@@ -278,9 +292,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     const wrists = [leftWrist, rightWrist];
 
     // Draw full pose skeleton on the main overlay
-    // Landmarks are normalized to the cropped left-half input,
-    // so scale x by 0.5 to map onto the full-width overlay
-    const scaleX = 0.5; // left half of player
+    // Landmarks are normalized to the cropped input region,
+    // so scale x to map onto the full-width overlay
+    const scaleX = overlayScaleXRef.current;
 
     // Draw all 33 pose landmarks
     for (const point of pose) {
@@ -413,15 +427,17 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     };
   }, []);
 
-  const handleLoadSession = async () => {
-    const id = extractSessionId(sessionInput.trim());
-    if (!id) {
-      setStatusText('Could not find a valid session ID. Paste a Panopto link or GUID.');
+  const handleLoadVideo = () => {
+    const result = buildEmbedUrl(videoInput);
+    if (!result) {
+      setStatusText('Could not parse URL. Paste a Panopto, YouTube, or embed link.');
       return;
     }
 
-    setSessionId(id);
-    setStatusText('Session loaded. Click "Start Capture" to begin hand tracking.');
+    setEmbedUrl(result.url);
+    setVideoType(result.type);
+    videoTypeRef.current = result.type;
+    setStatusText(`${result.type === 'panopto' ? 'Panopto' : result.type === 'youtube' ? 'YouTube' : 'Video'} loaded. Click "Start Capture" to begin.`);
   };
 
   const handleStopSharing = useCallback(() => {
@@ -448,8 +464,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   }, []);
 
   const handleStartCapture = async () => {
-    if (!sessionId) {
-      setStatusText('Load a Panopto session first.');
+    if (!embedUrl) {
+      setStatusText('Load a video first.');
       return;
     }
     new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
@@ -532,8 +548,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           const fullW = Math.floor(rect.width * scaleX);
           const sh = Math.floor(rect.height * scaleY);
 
-          // Crop to left half only (lecturer side of Panopto split-screen)
-          const sw = Math.floor(fullW / 2);
+          // Panopto: crop to left half (lecturer side), YouTube/other: use full frame
+          const sw = videoTypeRef.current === 'panopto' ? Math.floor(fullW / 2) : fullW;
 
           if (sw !== lastCropW || sh !== lastCropH) {
             offscreen.width = sw;
@@ -597,18 +613,18 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   return (
     <div className="order-2 flex h-full w-full flex-col gap-4 p-4 bg-[#061126] border border-[#1a2d4a] rounded-lg shadow-lg overflow-auto text-slate-100">
       <div ref={playerShellRef} className="relative w-full overflow-hidden rounded-lg bg-[#050b1a] border border-[#1a2d4a]" style={{ aspectRatio: '16 / 9' }}>
-        {panoptoEmbedUrl ? (
+        {embedUrl ? (
           <iframe
             ref={iframeRef}
-            src={panoptoEmbedUrl}
-            title="Panopto Lecture Recording"
+            src={embedUrl}
+            title="Lecture Recording"
             className="h-full w-full"
             allowFullScreen
-            allow="autoplay"
+            allow="autoplay; encrypted-media"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-slate-400">
-            <p className="text-lg">Paste a Panopto link above to load a lecture</p>
+            <p className="text-lg">Paste a Panopto or YouTube link above to load a video</p>
           </div>
         )}
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
@@ -647,64 +663,46 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       />
 
       <div className="rounded-lg border border-[#1a2d4a] bg-[#0a1933] p-3">
-        {!isAuthenticated ? (
-          <>
-            <p className="text-sm text-slate-200">
-              Log in with your University of Bath Panopto account to enable hand tracking.
-            </p>
-            <div className="mt-3">
-              <a
-                href={`${API_BASE}/auth/login`}
-                className="inline-block rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
-              >
-                Login with Panopto
-              </a>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-gray-700">
-              {!modelReady
-                ? 'Loading hand detection model...'
-                : 'Paste a Panopto lecture link, then click "Start Capture" to share this tab.'}
-            </p>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <input
-                type="text"
-                value={sessionInput}
-                onChange={(e) => setSessionInput(e.target.value)}
-                placeholder="https://uniofbath.cloud.panopto.eu/...?id=xxxx or session GUID"
-                className="w-full rounded-md border border-[#1a2d4a] bg-[#061126] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400"
-              />
-              <button
-                type="button"
-                onClick={handleLoadSession}
-                disabled={!modelReady}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                Load
-              </button>
-              {!isSharing ? (
-                <button
-                  type="button"
-                  onClick={handleStartCapture}
-                  disabled={!sessionId || !modelReady}
-                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  Start Capture
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleStopSharing}
-                  className="rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
-                >
-                  Stop Capture
-                </button>
-              )}
-            </div>
-          </>
-        )}
+        <p className="text-sm text-slate-200">
+          {!modelReady
+            ? 'Loading pose detection model...'
+            : 'Paste a Panopto or YouTube link, then click "Start Capture" to share this tab.'}
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="text"
+            value={videoInput}
+            onChange={(e) => setVideoInput(e.target.value)}
+            placeholder="Panopto or YouTube URL"
+            className="w-full rounded-md border border-[#1a2d4a] bg-[#061126] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400"
+          />
+          <button
+            type="button"
+            onClick={handleLoadVideo}
+            disabled={!modelReady}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Load
+          </button>
+          {!isSharing ? (
+            <button
+              type="button"
+              onClick={handleStartCapture}
+              disabled={!embedUrl || !modelReady}
+              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Start Capture
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleStopSharing}
+              className="rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
+            >
+              Stop Capture
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="rounded-lg border border-[#1a2d4a] bg-[#0a1933] p-3 text-sm text-slate-100">
