@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext';
 import dogImage from '../assets/dog.png';
 import catImage from '../assets/cat.jpg';
 import shushImage from '../assets/shush.png';
+import sigmaImage from '../assets/ermwhatthesigma.png';
 
 interface WebCamMotionTrackerProps {
   small?: boolean;
@@ -30,6 +31,11 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const [showShushOverlay, setShowShushOverlay] = useState(false);
   const mouthWideOpenRef = useRef(false);
   const shushDetectedRef = useRef(false);
+  // Sigma overlay state
+  const [showSigmaOverlay, setShowSigmaOverlay] = useState(false);
+  const sigmaDetectedRef = useRef(false);
+  const sigmaStartRef = useRef<number | null>(null);
+  const sigmaAudioRef = useRef<HTMLAudioElement | null>(null);
   // Add timers for gesture hold
   const shushStartRef = useRef<number | null>(null);
   const mouthOpenStartRef = useRef<number | null>(null);
@@ -309,8 +315,9 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
       const handResult = handLandmarker.detectForVideo(video, performance.now());
       let handsOnHead = false;
       let shushDetected = false;
+      let sigmaDetected = false;
 
-      // Shush detection: index fingertip close to mouth center.
+      // Shush and Sigma detection: index fingertip close to mouth center (shush), or index up and far from face (sigma)
       if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0 && handResult.landmarks && handResult.landmarks.length > 0) {
         const face = faceResult.faceLandmarks[0];
         const mouthCenter = {
@@ -319,13 +326,63 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         };
         const mouthWidth = Math.hypot(face[78].x - face[308].x, face[78].y - face[308].y);
         const shushThreshold = mouthWidth * 0.55;
+        const sigmaThreshold = mouthWidth * 1.5; // must be much farther than shush
 
         for (const hand of handResult.landmarks) {
           const indexTip = hand[8];
+          const indexMcp = hand[5]; // base of index finger
+          const middleMcp = hand[9]; // base of middle finger
           const distToMouth = Math.hypot(indexTip.x - mouthCenter.x, indexTip.y - mouthCenter.y);
+          // Shush: index tip close to mouth
           if (distToMouth < shushThreshold) {
             shushDetected = true;
             break;
+          }
+          // Sigma: index up, far from face
+          // Check if index is up (y of tip < y of mcp, and index is straighter than middle)
+          const indexUp = (indexTip.y < indexMcp.y) && (Math.abs(indexTip.x - indexMcp.x) < 0.07);
+          if (indexUp && distToMouth > sigmaThreshold) {
+            sigmaDetected = true;
+          }
+        }
+      }
+      // Sigma overlay logic (1s hold)
+      if (sigmaDetected) {
+        if (!sigmaStartRef.current) {
+          sigmaStartRef.current = now;
+        }
+        if (now - (sigmaStartRef.current || 0) >= 1000) {
+          if (!sigmaDetectedRef.current) {
+            sigmaDetectedRef.current = true;
+            setShowSigmaOverlay(showImagePopups && true);
+            // Play sigma audio
+            if (showImagePopups && !muteAlertSounds) {
+              const sigmaAudio = new Audio('/ermwhatthesigma.mp3');
+              sigmaAudioRef.current = sigmaAudio;
+              sigmaAudio.onended = () => {
+                if (sigmaAudioRef.current === sigmaAudio) {
+                  sigmaAudioRef.current = null;
+                }
+              };
+              sigmaAudio.play().catch(() => {
+                if (sigmaAudioRef.current === sigmaAudio) {
+                  sigmaAudioRef.current = null;
+                }
+              });
+            }
+          }
+        }
+      } else {
+        sigmaStartRef.current = null;
+        if (sigmaDetectedRef.current) {
+          sigmaDetectedRef.current = false;
+          setShowSigmaOverlay(false);
+          // Stop sigma audio
+          if (sigmaAudioRef.current) {
+            sigmaAudioRef.current.onended = null;
+            sigmaAudioRef.current.pause();
+            sigmaAudioRef.current.currentTime = 0;
+            sigmaAudioRef.current = null;
           }
         }
       }
@@ -540,6 +597,12 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
               alt="Shush"
               className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-[45]"
               style={{ opacity: showShushOverlay ? 1 : 0, transition: 'opacity 2s' }}
+            />
+            <img
+              src={sigmaImage}
+              alt="Sigma Erm What The"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-[46]"
+              style={{ opacity: showSigmaOverlay ? 1 : 0, transition: 'opacity 2s' }}
             />
           </>
         )}
