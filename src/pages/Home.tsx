@@ -219,7 +219,7 @@ export function Home() {
                     </div>
                 )}
 
-                {/* Fullscreen overlay */}
+                {/* Fullscreen overlawy */}
                 {fullscreenSide && (
                     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
                         <div className="absolute top-4 right-4 z-60">
