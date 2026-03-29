@@ -1,6 +1,7 @@
 import type { DragEvent } from 'react';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { WebcamDetector } from '../components/WebcamDetector';
+import { WebcamDetector, formatTime } from '../components/WebcamDetector';
+import type { GestureLogEntry, WebcamDetectorHandle } from '../components/WebcamDetector';
 import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
 import tileData from '../data/tileData.json';
@@ -23,6 +24,9 @@ export function Home() {
     const [showRickrollIndicator, setShowRickrollIndicator] = useState(false);
     const gesture67TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const rickrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const webcamRef = useRef<WebcamDetectorHandle>(null);
+    const [gestureLog, setGestureLog] = useState<GestureLogEntry[]>([]);
+    const logContainerRef = useRef<HTMLDivElement>(null);
     const draggingRef = useRef<{side: 'left'|'right'|null, startX: number, startLeft: number, startRight: number}|null>(null);
 
     const floatingDragRef = useRef<{offsetX: number, offsetY: number} | null>(null);
@@ -200,6 +204,20 @@ export function Home() {
         }
     }, [show67Text, showRickrollText]);
 
+    const handleGestureLog = useCallback((entry: GestureLogEntry) => {
+        setGestureLog(prev => [...prev, entry].sort((a, b) => a.timestamp - b.timestamp));
+    }, []);
+
+    const handleSeekTo = useCallback((seconds: number) => {
+        webcamRef.current?.seekTo(seconds);
+    }, []);
+
+    useEffect(() => {
+        if (logContainerRef.current) {
+            logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+        }
+    }, [gestureLog]);
+
     return (
         <main className="w-full max-w-none h-[calc(100vh-88px)] bg-[#061126] text-slate-100">
             <div className="relative w-full h-full overflow-hidden">
@@ -304,7 +322,7 @@ export function Home() {
                                     style={{ userSelect: 'none', touchAction: 'none' }}
                                 />
                             )}
-                            <WebcamDetector onGesture={handleGesture} />
+                            <WebcamDetector ref={webcamRef} onGesture={handleGesture} onGestureLog={handleGestureLog} />
                         </section>
 
                         {showRightZone && (
@@ -342,6 +360,34 @@ export function Home() {
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-[min(520px,92vw)]">
                     <DrapAndDropMenu tiles={tileData.engagementVideos} />
                 </div>
+                {gestureLog.length > 0 && (
+                    <div
+                        className="absolute bottom-4 right-4 z-20 flex flex-col overflow-hidden rounded-lg border border-[#1a2d4a] bg-[#0a1933]/90 p-2 backdrop-blur-sm"
+                        style={{ left: 'calc(50% + min(260px, 46vw) + 12px)', height: '130px' }}
+                    >
+                        <p className="mb-1 shrink-0 text-xs font-semibold text-slate-300">Gesture Log</p>
+                        <ul
+                            ref={logContainerRef}
+                            className="flex flex-col gap-1 overflow-y-auto min-h-0"
+                        >
+                            {gestureLog.map((entry, i) => (
+                                <li key={i}>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSeekTo(entry.timestamp)}
+                                        className="w-full rounded px-2 py-1 text-left text-xs text-slate-200 hover:bg-[#16325f] transition-colors"
+                                    >
+                                        <span className="font-mono">{formatTime(entry.timestamp)}</span>
+                                        {' — '}
+                                        <span className={entry.gesture === '67' ? 'text-green-400' : 'text-amber-400'}>
+                                            {entry.gesture}
+                                        </span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
             </div>
         </main>
     );
