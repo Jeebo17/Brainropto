@@ -72,7 +72,7 @@
     // -- Gesture detection config --
     const GESTURE_WINDOW_MS = 3000;
     const MIN_DISPLACEMENT_Y_RATIO = 0.15; // proportion of torso height
-    const MIN_DISPLACEMENT_X_RATIO = 0.10;
+    const MIN_DISPLACEMENT_X_RATIO = 0.20;
     const MIN_DISPLACEMENT_Y_FALLBACK = 0.10;
     const MIN_DISPLACEMENT_X_FALLBACK = 0.08;
     const REQUIRED_REVERSALS = 4;
@@ -243,7 +243,8 @@
       const sortedWrists = [...wrists].sort((a, b) => a.x - b.x);
       sortedWrists.forEach((wrist, i) => {
         const history = wristHistories[i];
-        history.push({ x: wrist.x, y: wrist.y, time: now, hipMidY, shoulderMidY });
+        const bodyCenterX = (pose[LEFT_SHOULDER].x + pose[RIGHT_SHOULDER].x) / 2;
+        history.push({ x: wrist.x, y: wrist.y, time: now, hipMidY, shoulderMidY, bodyCenterX });
         const cutoff = now - GESTURE_WINDOW_MS;
         while (history.length > 0 && history[0].time < cutoff) {
           history.shift();
@@ -315,8 +316,8 @@
       // Rickroll: both wrists sweeping X, no significant Y
       let minXReversals = 0;
       if (wristHistories[0].length >= 3 && wristHistories[1].length >= 3) {
-        const xRev0 = countReversals(wristHistories[0].map(p => p.x), minDispX);
-        const xRev1 = countReversals(wristHistories[1].map(p => p.x), minDispX);
+        const xRev0 = countReversals(wristHistories[0].map(p => p.bodyCenterX !== undefined ? p.x - p.bodyCenterX : p.x), minDispX);
+        const xRev1 = countReversals(wristHistories[1].map(p => p.bodyCenterX !== undefined ? p.x - p.bodyCenterX : p.x), minDispX);
         minXReversals = Math.min(xRev0, xRev1);
       }
 

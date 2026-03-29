@@ -44,12 +44,12 @@ function buildEmbedUrl(input: string): { url: string; type: VideoType } | null {
 
 type GestureType = '67' | 'rickroll';
 
-type PositionEntry = { x: number; y: number; time: number; shoulderMidY?: number };
+type PositionEntry = { x: number; y: number; time: number; shoulderMidY?: number; bodyCenterX?: number };
 
 const GESTURE_WINDOW_MS = 3000; // 3 second window
 // Displacement thresholds as a proportion of torso height
 const MIN_DISPLACEMENT_Y_RATIO = 0.15; // 15% of torso height for 67 (up-down)
-const MIN_DISPLACEMENT_X_RATIO = 0.10; // 10% of torso height for rickroll (side-to-side)
+const MIN_DISPLACEMENT_X_RATIO = 0.20; // 20% of torso height for rickroll (side-to-side)
 // Fallbacks if torso can't be measured
 const MIN_DISPLACEMENT_Y_FALLBACK = 0.10;
 const MIN_DISPLACEMENT_X_FALLBACK = 0.08;
@@ -166,7 +166,7 @@ function detectGesture(
     if (!hasSignificantY) {
       const bothHaveSweeps = handHistories.slice(0, 2).every((history) => {
         if (history.length < 3) return false;
-        const xValues = history.map((p) => p.x);
+        const xValues = history.map((p) => p.bodyCenterX !== undefined ? p.x - p.bodyCenterX : p.x);
         return countReversals(xValues, minDispX) >= REQUIRED_REVERSALS;
       });
       if (bothHaveSweeps) return 'rickroll';
@@ -368,7 +368,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     sortedWrists.forEach((wrist, slotIndex) => {
       const history = handHistoriesRef.current[slotIndex];
       const shoulderMidY = (pose[LEFT_SHOULDER].y + pose[RIGHT_SHOULDER].y) / 2;
-      history.push({ x: wrist.x, y: wrist.y, time: now, shoulderMidY });
+      const bodyCenterX = (pose[LEFT_SHOULDER].x + pose[RIGHT_SHOULDER].x) / 2;
+      history.push({ x: wrist.x, y: wrist.y, time: now, shoulderMidY, bodyCenterX });
       const cutoff = now - GESTURE_WINDOW_MS;
       while (history.length > 0 && history[0].time < cutoff) {
         history.shift();
