@@ -15,7 +15,8 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const handsOnHeadStartRef = useRef<number | null>(null);
   const handsOnHeadPlayedRef = useRef(false);
   const cookedDogAudioRef = useRef<HTMLAudioElement | null>(null);
-  const { wakeUpDelay } = useSettings();
+  const wakeUpAudioRef = useRef<HTMLAudioElement | null>(null);
+  const { wakeUpDelay, showImagePopups, muteAlertSounds } = useSettings();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
@@ -35,6 +36,31 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const eyesClosedStartRef = useRef<number | null>(null);
   const [wakeUpActive, setWakeUpActive] = useState(false);
   const pipePlayedRef = useRef(false);
+
+  useEffect(() => {
+    if (showImagePopups) return;
+    setShowCookedDog(false);
+    setShowCatOverlay(false);
+    setShowShushOverlay(false);
+    mouthWideOpenRef.current = false;
+    shushDetectedRef.current = false;
+  }, [showImagePopups]);
+
+  useEffect(() => {
+    if (!muteAlertSounds) return;
+    if (cookedDogAudioRef.current) {
+      cookedDogAudioRef.current.onended = null;
+      cookedDogAudioRef.current.pause();
+      cookedDogAudioRef.current.currentTime = 0;
+      cookedDogAudioRef.current = null;
+    }
+    if (wakeUpAudioRef.current) {
+      wakeUpAudioRef.current.onended = null;
+      wakeUpAudioRef.current.pause();
+      wakeUpAudioRef.current.currentTime = 0;
+      wakeUpAudioRef.current = null;
+    }
+  }, [muteAlertSounds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +119,11 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         cookedDogAudioRef.current.pause();
         cookedDogAudioRef.current.currentTime = 0;
         cookedDogAudioRef.current = null;
+      }
+      if (wakeUpAudioRef.current) {
+        wakeUpAudioRef.current.pause();
+        wakeUpAudioRef.current.currentTime = 0;
+        wakeUpAudioRef.current = null;
       }
       if (faceLandmarkerRef.current) {
         faceLandmarkerRef.current.close();
@@ -214,7 +245,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
 
       if (mouthWideOpen !== mouthWideOpenRef.current) {
         mouthWideOpenRef.current = mouthWideOpen;
-        setShowCatOverlay(mouthWideOpen);
+        setShowCatOverlay(showImagePopups && mouthWideOpen);
       }
       // Eyes closed delay logic
       const now = Date.now();
@@ -230,7 +261,20 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         ) {
           setWakeUpActive(true);
           if (!pipePlayedRef.current) {
-            new Audio('/WAKE_UP.mp3').play().catch(() => {});
+            if (!muteAlertSounds) {
+              const wakeAudio = new Audio('/WAKE_UP.mp3');
+              wakeUpAudioRef.current = wakeAudio;
+              wakeAudio.onended = () => {
+                if (wakeUpAudioRef.current === wakeAudio) {
+                  wakeUpAudioRef.current = null;
+                }
+              };
+              wakeAudio.play().catch(() => {
+                if (wakeUpAudioRef.current === wakeAudio) {
+                  wakeUpAudioRef.current = null;
+                }
+              });
+            }
             pipePlayedRef.current = true;
           }
         } else {
@@ -270,7 +314,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
 
       if (shushDetected !== shushDetectedRef.current) {
         shushDetectedRef.current = shushDetected;
-        setShowShushOverlay(shushDetected);
+        setShowShushOverlay(showImagePopups && shushDetected);
       }
 
       // Use face landmarks for head, hand landmarks for hands
@@ -312,21 +356,23 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
               cookedDogAudioRef.current.currentTime = 0;
               cookedDogAudioRef.current = null;
             }
-            const dogAudio = new Audio('/cooked-dog-meme.mp3');
-            cookedDogAudioRef.current = dogAudio;
-            setShowCookedDog(true);
-            dogAudio.onended = () => {
-              setShowCookedDog(false);
-              if (cookedDogAudioRef.current === dogAudio) {
-                cookedDogAudioRef.current = null;
-              }
-            };
-            dogAudio.play().catch(() => {
-              setShowCookedDog(false);
-              if (cookedDogAudioRef.current === dogAudio) {
-                cookedDogAudioRef.current = null;
-              }
-            });
+            setShowCookedDog(showImagePopups);
+            if (!muteAlertSounds) {
+              const dogAudio = new Audio('/cooked-dog-meme.mp3');
+              cookedDogAudioRef.current = dogAudio;
+              dogAudio.onended = () => {
+                setShowCookedDog(false);
+                if (cookedDogAudioRef.current === dogAudio) {
+                  cookedDogAudioRef.current = null;
+                }
+              };
+              dogAudio.play().catch(() => {
+                setShowCookedDog(false);
+                if (cookedDogAudioRef.current === dogAudio) {
+                  cookedDogAudioRef.current = null;
+                }
+              });
+            }
             handsOnHeadPlayedRef.current = true;
           }
         }
@@ -423,7 +469,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
     };
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [isRunning, modelReady]);
+  }, [isRunning, modelReady, wakeUpDelay, showImagePopups, muteAlertSounds]);
 
 
 
@@ -443,24 +489,28 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
             transition: 'background 0.2s',
           }}
         />
-        <img
-          src={dogImage}
-          alt="Cooked dog"
-          className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-50"
-          style={{ opacity: showCookedDog ? 1 : 0, transition: 'opacity 2s' }}
-        />
-        <img
-          src={catImage}
-          alt="Mouth open cat"
-          className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-40"
-          style={{ opacity: showCatOverlay ? 1 : 0, transition: 'opacity 2s' }}
-        />
-        <img
-          src={shushImage}
-          alt="Shush"
-          className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-[45]"
-          style={{ opacity: showShushOverlay ? 1 : 0, transition: 'opacity 2s' }}
-        />
+        {showImagePopups && (
+          <>
+            <img
+              src={dogImage}
+              alt="Cooked dog"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-50"
+              style={{ opacity: showCookedDog ? 1 : 0, transition: 'opacity 2s' }}
+            />
+            <img
+              src={catImage}
+              alt="Mouth open cat"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-40"
+              style={{ opacity: showCatOverlay ? 1 : 0, transition: 'opacity 2s' }}
+            />
+            <img
+              src={shushImage}
+              alt="Shush"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-[45]"
+              style={{ opacity: showShushOverlay ? 1 : 0, transition: 'opacity 2s' }}
+            />
+          </>
+        )}
         {/* Status overlay inside preview, only show when not running */}
         {!isRunning && status && (
           <div

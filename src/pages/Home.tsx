@@ -5,11 +5,13 @@ import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
 import tileData from '../data/tileData.json';
 import { TileType } from '../types/Types';
+import { useSettings } from '../context/SettingsContext';
 
 const TILE_DRAG_MIME = 'application/x-bathhack-tile';
 type SnapSide = 'left' | 'right';
 
 export function Home() {
+    const { show67Text, showRickrollText } = useSettings();
     const [leftTile, setLeftTile] = useState<TileType | null>(null);
     const [rightTile, setRightTile] = useState<TileType | null>(null);
     const [activeDropZone, setActiveDropZone] = useState<SnapSide | null>(null);
@@ -151,8 +153,28 @@ export function Home() {
         };
     }, []);
 
+    useEffect(() => {
+        if (!show67Text) {
+            setShow67Indicator(false);
+            if (gesture67TimeoutRef.current) {
+                clearTimeout(gesture67TimeoutRef.current);
+                gesture67TimeoutRef.current = null;
+            }
+        }
+    }, [show67Text]);
+
+    useEffect(() => {
+        if (!showRickrollText) {
+            setShowRickrollIndicator(false);
+            if (rickrollTimeoutRef.current) {
+                clearTimeout(rickrollTimeoutRef.current);
+                rickrollTimeoutRef.current = null;
+            }
+        }
+    }, [showRickrollText]);
+
     const handleGesture = useCallback((gesture: '67' | 'rickroll') => {
-        if (gesture === '67') {
+        if (gesture === '67' && show67Text) {
             setShow67Indicator(true);
 
             if (gesture67TimeoutRef.current) {
@@ -163,7 +185,7 @@ export function Home() {
                 setShow67Indicator(false);
             }, 1000);
         }
-        if (gesture === 'rickroll') {
+        if (gesture === 'rickroll' && showRickrollText) {
             setShowRickrollIndicator(true);
 
             if (rickrollTimeoutRef.current) {
@@ -174,12 +196,12 @@ export function Home() {
                 setShowRickrollIndicator(false);
             }, 1000);
         }
-    }, []);
+    }, [show67Text, showRickrollText]);
 
     return (
         <main className="w-full max-w-none h-[calc(100vh-88px)] bg-[#061126] text-slate-100">
             <div className="relative w-full h-full overflow-hidden">
-                {show67Indicator && (
+                {show67Text && show67Indicator && (
                     <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none">
                         <div className="text-[38vw] leading-none font-black uppercase tracking-[-0.08em] text-red-500 drop-shadow-[0_0_30px_rgba(255,0,0,0.95)] animate-pulse select-none">
                             67
@@ -187,7 +209,7 @@ export function Home() {
                     </div>
                 )}
 
-                {showRickrollIndicator && (
+                {showRickrollText && showRickrollIndicator && (
                     <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none bg-black/35">
                         <div className="text-[16vw] leading-none font-black uppercase tracking-[-0.04em] text-fuchsia-400 drop-shadow-[0_0_30px_rgba(232,121,249,0.95)] animate-pulse select-none">
                             RICKROLL
