@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { FaceLandmarker, PoseLandmarker, HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { useSettings } from '../context/SettingsContext';
 import dogImage from '../assets/dog.png';
+import catImage from '../assets/cat.jpg';
+import shushImage from '../assets/shush.png';
 
 interface WebCamMotionTrackerProps {
   small?: boolean;
@@ -13,7 +15,8 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const handsOnHeadStartRef = useRef<number | null>(null);
   const handsOnHeadPlayedRef = useRef(false);
   const cookedDogAudioRef = useRef<HTMLAudioElement | null>(null);
-  const { wakeUpDelay } = useSettings();
+  const wakeUpAudioRef = useRef<HTMLAudioElement | null>(null);
+  const { wakeUpDelay, showImagePopups, muteAlertSounds } = useSettings();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
@@ -23,12 +26,41 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const [status, setStatus] = useState('Loading models...');
   const [isRunning, setIsRunning] = useState(false);
   const [showCookedDog, setShowCookedDog] = useState(false);
+  const [showCatOverlay, setShowCatOverlay] = useState(false);
+  const [showShushOverlay, setShowShushOverlay] = useState(false);
+  const mouthWideOpenRef = useRef(false);
+  const shushDetectedRef = useRef(false);
 
   // Track eyes closed state and timer
   const eyesClosedRef = useRef(false);
   const eyesClosedStartRef = useRef<number | null>(null);
   const [wakeUpActive, setWakeUpActive] = useState(false);
   const pipePlayedRef = useRef(false);
+
+  useEffect(() => {
+    if (showImagePopups) return;
+    setShowCookedDog(false);
+    setShowCatOverlay(false);
+    setShowShushOverlay(false);
+    mouthWideOpenRef.current = false;
+    shushDetectedRef.current = false;
+  }, [showImagePopups]);
+
+  useEffect(() => {
+    if (!muteAlertSounds) return;
+    if (cookedDogAudioRef.current) {
+      cookedDogAudioRef.current.onended = null;
+      cookedDogAudioRef.current.pause();
+      cookedDogAudioRef.current.currentTime = 0;
+      cookedDogAudioRef.current = null;
+    }
+    if (wakeUpAudioRef.current) {
+      wakeUpAudioRef.current.onended = null;
+      wakeUpAudioRef.current.pause();
+      wakeUpAudioRef.current.currentTime = 0;
+      wakeUpAudioRef.current = null;
+    }
+  }, [muteAlertSounds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +119,11 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         cookedDogAudioRef.current.pause();
         cookedDogAudioRef.current.currentTime = 0;
         cookedDogAudioRef.current = null;
+      }
+      if (wakeUpAudioRef.current) {
+        wakeUpAudioRef.current.pause();
+        wakeUpAudioRef.current.currentTime = 0;
+        wakeUpAudioRef.current = null;
       }
       if (faceLandmarkerRef.current) {
         faceLandmarkerRef.current.close();
@@ -147,6 +184,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
       ctx.restore();
       // Face mesh
       let eyesClosed = false;
+      let mouthWideOpen = false;
       const faceResult = faceLandmarker.detectForVideo(video, performance.now());
       if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
         for (const face of faceResult.faceLandmarks) {
@@ -194,7 +232,20 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
           if (leftEAR < 0.18 && rightEAR < 0.18) {
             eyesClosed = true;
           }
+
+          // Mouth open detection (upper lip 13, lower lip 14 vs corners 78 and 308).
+          const mouthOpenDistance = Math.hypot(face[13].x - face[14].x, face[13].y - face[14].y);
+          const mouthWidth = Math.hypot(face[78].x - face[308].x, face[78].y - face[308].y);
+          const mouthOpenRatio = mouthWidth > 0 ? mouthOpenDistance / mouthWidth : 0;
+          if (mouthOpenRatio > 0.33) {
+            mouthWideOpen = true;
+          }
         }
+      }
+
+      if (mouthWideOpen !== mouthWideOpenRef.current) {
+        mouthWideOpenRef.current = mouthWideOpen;
+        setShowCatOverlay(showImagePopups && mouthWideOpen);
       }
       // Eyes closed delay logic
       const now = Date.now();
@@ -210,7 +261,20 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         ) {
           setWakeUpActive(true);
           if (!pipePlayedRef.current) {
-            new Audio('/WAKE_UP.mp3').play().catch(() => {});
+            if (!muteAlertSounds) {
+              const wakeAudio = new Audio('/WAKE_UP.mp3');
+              wakeUpAudioRef.current = wakeAudio;
+              wakeAudio.onended = () => {
+                if (wakeUpAudioRef.current === wakeAudio) {
+                  wakeUpAudioRef.current = null;
+                }
+              };
+              wakeAudio.play().catch(() => {
+                if (wakeUpAudioRef.current === wakeAudio) {
+                  wakeUpAudioRef.current = null;
+                }
+              });
+            }
             pipePlayedRef.current = true;
           }
         } else {
@@ -226,6 +290,33 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
       // --- Hands on head detection ---
       const handResult = handLandmarker.detectForVideo(video, performance.now());
       let handsOnHead = false;
+      let shushDetected = false;
+
+      // Shush detection: index fingertip close to mouth center.
+      if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0 && handResult.landmarks && handResult.landmarks.length > 0) {
+        const face = faceResult.faceLandmarks[0];
+        const mouthCenter = {
+          x: (face[13].x + face[14].x) / 2,
+          y: (face[13].y + face[14].y) / 2,
+        };
+        const mouthWidth = Math.hypot(face[78].x - face[308].x, face[78].y - face[308].y);
+        const shushThreshold = mouthWidth * 0.55;
+
+        for (const hand of handResult.landmarks) {
+          const indexTip = hand[8];
+          const distToMouth = Math.hypot(indexTip.x - mouthCenter.x, indexTip.y - mouthCenter.y);
+          if (distToMouth < shushThreshold) {
+            shushDetected = true;
+            break;
+          }
+        }
+      }
+
+      if (shushDetected !== shushDetectedRef.current) {
+        shushDetectedRef.current = shushDetected;
+        setShowShushOverlay(showImagePopups && shushDetected);
+      }
+
       // Use face landmarks for head, hand landmarks for hands
       if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0 && handResult.landmarks && handResult.landmarks.length > 0) {
         const face = faceResult.faceLandmarks[0];
@@ -265,21 +356,23 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
               cookedDogAudioRef.current.currentTime = 0;
               cookedDogAudioRef.current = null;
             }
-            const dogAudio = new Audio('/cooked-dog-meme.mp3');
-            cookedDogAudioRef.current = dogAudio;
-            setShowCookedDog(true);
-            dogAudio.onended = () => {
-              setShowCookedDog(false);
-              if (cookedDogAudioRef.current === dogAudio) {
-                cookedDogAudioRef.current = null;
-              }
-            };
-            dogAudio.play().catch(() => {
-              setShowCookedDog(false);
-              if (cookedDogAudioRef.current === dogAudio) {
-                cookedDogAudioRef.current = null;
-              }
-            });
+            setShowCookedDog(showImagePopups);
+            if (!muteAlertSounds) {
+              const dogAudio = new Audio('/cooked-dog-meme.mp3');
+              cookedDogAudioRef.current = dogAudio;
+              dogAudio.onended = () => {
+                setShowCookedDog(false);
+                if (cookedDogAudioRef.current === dogAudio) {
+                  cookedDogAudioRef.current = null;
+                }
+              };
+              dogAudio.play().catch(() => {
+                setShowCookedDog(false);
+                if (cookedDogAudioRef.current === dogAudio) {
+                  cookedDogAudioRef.current = null;
+                }
+              });
+            }
             handsOnHeadPlayedRef.current = true;
           }
         }
@@ -376,13 +469,13 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
     };
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [isRunning, modelReady]);
+  }, [isRunning, modelReady, wakeUpDelay, showImagePopups, muteAlertSounds]);
 
 
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] p-4">
-      <div className="relative flex justify-center items-center">
+    <div className={small ? 'inline-flex items-center justify-center p-0 m-0' : 'flex flex-col items-center justify-center min-h-[80vh] p-4'}>
+      <div className="relative flex justify-center items-center m-0 p-0">
         <video ref={videoRef} className="rounded-lg shadow-lg" style={{ display: 'none' }} />
         <canvas
           ref={canvasRef}
@@ -396,12 +489,28 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
             transition: 'background 0.2s',
           }}
         />
-        <img
-          src={dogImage}
-          alt="Cooked dog"
-          className="fixed inset-0 w-screen h-screen object-cover pointer-events-none transition-opacity duration-1000 z-50"
-          style={{ opacity: showCookedDog ? 1 : 0 }}
-        />
+        {showImagePopups && (
+          <>
+            <img
+              src={dogImage}
+              alt="Cooked dog"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-50"
+              style={{ opacity: showCookedDog ? 1 : 0, transition: 'opacity 2s' }}
+            />
+            <img
+              src={catImage}
+              alt="Mouth open cat"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-40"
+              style={{ opacity: showCatOverlay ? 1 : 0, transition: 'opacity 2s' }}
+            />
+            <img
+              src={shushImage}
+              alt="Shush"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-[45]"
+              style={{ opacity: showShushOverlay ? 1 : 0, transition: 'opacity 2s' }}
+            />
+          </>
+        )}
         {/* Status overlay inside preview, only show when not running */}
         {!isRunning && status && (
           <div
