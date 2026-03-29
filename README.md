@@ -1,6 +1,4 @@
-document.querySelector('button[aria-label="Download transcript"]').click();
-
-# BATH HACK 2026: BRAINROT SIMULATOR 🧠💥
+# BATH HACK 2026: BRAINROPTO
 
 ## WHAT IS THIS???
 
