@@ -26,7 +26,7 @@ export function Home() {
     const rickrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const webcamRef = useRef<WebcamDetectorHandle>(null);
     const [gestureLog, setGestureLog] = useState<GestureLogEntry[]>([]);
-    const logContainerRef = useRef<HTMLDivElement>(null);
+    const logContainerRef = useRef<HTMLUListElement>(null);
     const draggingRef = useRef<{side: 'left'|'right'|null, startX: number, startLeft: number, startRight: number}|null>(null);
 
     const floatingDragRef = useRef<{offsetX: number, offsetY: number} | null>(null);
@@ -357,12 +357,13 @@ export function Home() {
                     />
                 )}
 
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-[min(520px,92vw)]">
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-[min(520px,92vw)]">
                     <DrapAndDropMenu tiles={tileData.engagementVideos} />
                 </div>
+
                 {gestureLog.length > 0 && (
                     <div
-                        className="absolute bottom-4 right-4 z-20 flex flex-col overflow-hidden rounded-lg border border-[#1a2d4a] bg-[#0a1933]/90 p-2 backdrop-blur-sm"
+                        className="absolute bottom-6 right-6 z-20 flex flex-col overflow-hidden rounded-lg border border-[#1a2d4a] bg-[#0a1933]/90 p-2 backdrop-blur-sm"
                         style={{ left: 'calc(50% + min(260px, 46vw) + 12px)', height: '130px' }}
                     >
                         <p className="mb-1 shrink-0 text-xs font-semibold text-slate-300">Gesture Log</p>

@@ -1,6 +1,8 @@
 import { useSettings } from '../context/SettingsContext';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
+import { forwardRef } from 'react';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+
 
 type HandPoint = {
   x: number;
@@ -225,7 +227,7 @@ interface WebcamDetectorProps {
   onGestureLog?: (entry: GestureLogEntry) => void;
 }
 
-export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
+export const WebcamDetector = forwardRef<WebcamDetectorHandle, WebcamDetectorProps>(function WebcamDetector({ onGesture, onGestureLog }, ref) {
   const { showSkeletonOverlay } = useSettings();
   const captureVideoRef = useRef<HTMLVideoElement>(null);
   const directVideoRef = useRef<HTMLVideoElement>(null);
