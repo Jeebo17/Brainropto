@@ -140,7 +140,7 @@ function App() {
               Home
             </Link>
             <Link
-              to="/webcam-motion-tracker"
+              to="/webcam"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
             >
               Webcam
