@@ -1,3 +1,4 @@
+import { useSettings } from '../context/SettingsContext';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
@@ -6,6 +7,8 @@ type HandPoint = {
   y: number;
   z: number;
 };
+
+
 
 type VideoType = 'panopto' | 'youtube' | 'other';
 
@@ -167,6 +170,7 @@ interface WebcamDetectorProps {
 }
 
 export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
+  const { showSkeletonOverlay } = useSettings();
   const captureVideoRef = useRef<HTMLVideoElement>(null);
   const directVideoRef = useRef<HTMLVideoElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -307,44 +311,48 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     // so scale x to map onto the full-width overlay
     const scaleX = overlayScaleXRef.current;
 
-    // Draw all 33 pose landmarks
-    for (const point of pose) {
-      ctx.beginPath();
-      ctx.arc(point.x * scaleX * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
-      ctx.fillStyle = '#60a5fa';
-      ctx.fill();
+    if (showSkeletonOverlay) {
+      // Draw all 33 pose landmarks
+      for (const point of pose) {
+        ctx.beginPath();
+        ctx.arc(point.x * scaleX * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
+        ctx.fillStyle = '#60a5fa';
+        ctx.fill();
+      }
+
+      // Draw skeleton connections
+      const connections = [
+        [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], // arms
+        [11, 23], [12, 24], [23, 24], // torso
+        [23, 25], [25, 27], [24, 26], [26, 28], // legs
+      ];
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.4;
+      for (const [a, b] of connections) {
+        ctx.beginPath();
+        ctx.moveTo(pose[a].x * scaleX * canvas.width, pose[a].y * canvas.height);
+        ctx.lineTo(pose[b].x * scaleX * canvas.width, pose[b].y * canvas.height);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1.0;
     }
 
-    // Draw skeleton connections
-    const connections = [
-      [11, 12], [11, 13], [13, 15], [12, 14], [14, 16], // arms
-      [11, 23], [12, 24], [23, 24], // torso
-      [23, 25], [25, 27], [24, 26], [26, 28], // legs
-    ];
-    ctx.strokeStyle = '#60a5fa';
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.4;
-    for (const [a, b] of connections) {
-      ctx.beginPath();
-      ctx.moveTo(pose[a].x * scaleX * canvas.width, pose[a].y * canvas.height);
-      ctx.lineTo(pose[b].x * scaleX * canvas.width, pose[b].y * canvas.height);
-      ctx.stroke();
+    if (showSkeletonOverlay) {
+      // Highlight wrists with larger circles
+      wrists.forEach((wrist, i) => {
+        const color = i === 0 ? '#22c55e' : '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(wrist.x * scaleX * canvas.width, wrist.y * canvas.height, 8, 0, 2 * Math.PI);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = color;
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText(i === 0 ? 'L' : 'R', wrist.x * scaleX * canvas.width - 4, wrist.y * canvas.height - 12);
+      });
     }
-    ctx.globalAlpha = 1.0;
-
-    // Highlight wrists with larger circles
-    wrists.forEach((wrist, i) => {
-      const color = i === 0 ? '#22c55e' : '#f59e0b';
-      ctx.beginPath();
-      ctx.arc(wrist.x * scaleX * canvas.width, wrist.y * canvas.height, 8, 0, 2 * Math.PI);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.stroke();
-
-      ctx.fillStyle = color;
-      ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(i === 0 ? 'L' : 'R', wrist.x * scaleX * canvas.width - 4, wrist.y * canvas.height - 12);
-    });
 
     setHandPosition({ x: leftWrist.x, y: leftWrist.y, z: leftWrist.z });
 
@@ -361,54 +369,56 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     });
 
     // Draw pose detection overlay on the debug crop canvas
-    const debugCanvas = debugOverlayRef.current;
-    if (debugCanvas) {
-      const cropCanvas = cropCanvasRef.current;
-      if (cropCanvas && cropCanvas.width > 0) {
-        debugCanvas.width = cropCanvas.width;
-        debugCanvas.height = cropCanvas.height;
-      }
-      const dCtx = debugCanvas.getContext('2d');
-      if (dCtx) {
-        dCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
-
-        // Draw all pose landmarks
-        for (const point of pose) {
-          dCtx.beginPath();
-          dCtx.arc(point.x * debugCanvas.width, point.y * debugCanvas.height, 2, 0, 2 * Math.PI);
-          dCtx.fillStyle = '#60a5fa';
-          dCtx.fill();
+    if (showSkeletonOverlay) {
+      const debugCanvas = debugOverlayRef.current;
+      if (debugCanvas) {
+        const cropCanvas = cropCanvasRef.current;
+        if (cropCanvas && cropCanvas.width > 0) {
+          debugCanvas.width = cropCanvas.width;
+          debugCanvas.height = cropCanvas.height;
         }
+        const dCtx = debugCanvas.getContext('2d');
+        if (dCtx) {
+          dCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
 
-        // Highlight wrists
-        wrists.forEach((wrist, i) => {
-          const color = i === 0 ? '#22c55e' : '#f59e0b';
-          dCtx.beginPath();
-          dCtx.arc(wrist.x * debugCanvas.width, wrist.y * debugCanvas.height, 6, 0, 2 * Math.PI);
-          dCtx.strokeStyle = color;
-          dCtx.lineWidth = 2;
-          dCtx.stroke();
-
-          dCtx.fillStyle = color;
-          dCtx.font = 'bold 10px sans-serif';
-          dCtx.fillText(i === 0 ? 'L' : 'R', wrist.x * debugCanvas.width - 3, wrist.y * debugCanvas.height - 9);
-        });
-
-        // Draw wrist trails from history
-        for (let h = 0; h < 2; h++) {
-          const trail = handHistoriesRef.current[h];
-          if (trail.length < 2) continue;
-          const color = h === 0 ? '#22c55e' : '#f59e0b';
-          dCtx.beginPath();
-          dCtx.moveTo(trail[0].x * debugCanvas.width, trail[0].y * debugCanvas.height);
-          for (let t = 1; t < trail.length; t++) {
-            dCtx.lineTo(trail[t].x * debugCanvas.width, trail[t].y * debugCanvas.height);
+          // Draw all pose landmarks
+          for (const point of pose) {
+            dCtx.beginPath();
+            dCtx.arc(point.x * debugCanvas.width, point.y * debugCanvas.height, 2, 0, 2 * Math.PI);
+            dCtx.fillStyle = '#60a5fa';
+            dCtx.fill();
           }
-          dCtx.strokeStyle = color;
-          dCtx.lineWidth = 2;
-          dCtx.globalAlpha = 0.5;
-          dCtx.stroke();
-          dCtx.globalAlpha = 1.0;
+
+          // Highlight wrists
+          wrists.forEach((wrist, i) => {
+            const color = i === 0 ? '#22c55e' : '#f59e0b';
+            dCtx.beginPath();
+            dCtx.arc(wrist.x * debugCanvas.width, wrist.y * debugCanvas.height, 6, 0, 2 * Math.PI);
+            dCtx.strokeStyle = color;
+            dCtx.lineWidth = 2;
+            dCtx.stroke();
+
+            dCtx.fillStyle = color;
+            dCtx.font = 'bold 10px sans-serif';
+            dCtx.fillText(i === 0 ? 'L' : 'R', wrist.x * debugCanvas.width - 3, wrist.y * debugCanvas.height - 9);
+          });
+
+          // Draw wrist trails from history
+          for (let h = 0; h < 2; h++) {
+            const trail = handHistoriesRef.current[h];
+            if (trail.length < 2) continue;
+            const color = h === 0 ? '#22c55e' : '#f59e0b';
+            dCtx.beginPath();
+            dCtx.moveTo(trail[0].x * debugCanvas.width, trail[0].y * debugCanvas.height);
+            for (let t = 1; t < trail.length; t++) {
+              dCtx.lineTo(trail[t].x * debugCanvas.width, trail[t].y * debugCanvas.height);
+            }
+            dCtx.strokeStyle = color;
+            dCtx.lineWidth = 2;
+            dCtx.globalAlpha = 0.5;
+            dCtx.stroke();
+            dCtx.globalAlpha = 1.0;
+          }
         }
       }
     }

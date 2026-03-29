@@ -1,3 +1,5 @@
+const SHOW_SKELETON_OVERLAY_KEY = 'brainropto.showSkeletonOverlay';
+const DEFAULT_SHOW_SKELETON_OVERLAY = true;
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 const PIPE_VOLUME_KEY = 'brainropto.pipeVolume';
@@ -99,6 +101,8 @@ type SettingsContextValue = {
     setMuteAlertSounds: (value: boolean) => void;
     enablePipeSound: boolean;
     setEnablePipeSound: (value: boolean) => void;
+    showSkeletonOverlay: boolean;
+    setShowSkeletonOverlay: (value: boolean) => void;
 };
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
@@ -109,6 +113,18 @@ type SettingsProviderProps = {
 
 
 export function SettingsProvider({ children }: SettingsProviderProps) {
+        const [showSkeletonOverlay, setShowSkeletonOverlayState] = useState<boolean>(() =>
+            readStoredBoolean(SHOW_SKELETON_OVERLAY_KEY, DEFAULT_SHOW_SKELETON_OVERLAY)
+        );
+
+        const setShowSkeletonOverlay = (value: boolean) => {
+            setShowSkeletonOverlayState(value);
+            safeSetStoredBoolean(SHOW_SKELETON_OVERLAY_KEY, value);
+        };
+
+        useEffect(() => {
+            safeSetStoredBoolean(SHOW_SKELETON_OVERLAY_KEY, showSkeletonOverlay);
+        }, [showSkeletonOverlay]);
     const [pipeVolume, setPipeVolumeState] = useState<number>(() =>
         readStoredNumber(PIPE_VOLUME_KEY, DEFAULT_PIPE_VOLUME, 0, 100)
     );
@@ -211,22 +227,24 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
 
     const value = useMemo(
         () => ({
-        pipeVolume,
-        setPipeVolume,
-        pipeFrequency,
-        setPipeFrequency,
-        wakeUpDelay,
-        setWakeUpDelay,
-        show67Text,
-        setShow67Text,
-        showRickrollText,
-        setShowRickrollText,
-        showImagePopups,
-        setShowImagePopups,
-        muteAlertSounds,
-        setMuteAlertSounds,
-        enablePipeSound,
-        setEnablePipeSound,
+            pipeVolume,
+            setPipeVolume,
+            pipeFrequency,
+            setPipeFrequency,
+            wakeUpDelay,
+            setWakeUpDelay,
+            show67Text,
+            setShow67Text,
+            showRickrollText,
+            setShowRickrollText,
+            showImagePopups,
+            setShowImagePopups,
+            muteAlertSounds,
+            setMuteAlertSounds,
+            enablePipeSound,
+            setEnablePipeSound,
+            showSkeletonOverlay,
+            setShowSkeletonOverlay,
         }),
         [
             pipeVolume,
@@ -237,6 +255,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
             showImagePopups,
             muteAlertSounds,
             enablePipeSound,
+            showSkeletonOverlay,
         ]
     );
 

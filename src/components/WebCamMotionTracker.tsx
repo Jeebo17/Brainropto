@@ -16,7 +16,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const handsOnHeadPlayedRef = useRef(false);
   const cookedDogAudioRef = useRef<HTMLAudioElement | null>(null);
   const wakeUpAudioRef = useRef<HTMLAudioElement | null>(null);
-  const { wakeUpDelay, showImagePopups, muteAlertSounds } = useSettings();
+  const { wakeUpDelay, showImagePopups, muteAlertSounds, showSkeletonOverlay } = useSettings();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
@@ -188,32 +188,33 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
       const faceResult = faceLandmarker.detectForVideo(video, performance.now());
       if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
         for (const face of faceResult.faceLandmarks) {
-          ctx.strokeStyle = '#60a5fa';
-          ctx.lineWidth = 2;
-          // Draw points (mirrored)
-          for (const pt of face) {
-            ctx.beginPath();
-            ctx.arc((canvas.width - pt.x * canvas.width), pt.y * canvas.height, 2, 0, 2 * Math.PI);
-            ctx.fillStyle = '#60a5fa';
-            ctx.fill();
-          }
-          // Draw mesh lines (mirrored)
-          const connections = [
-            [10, 338], [338, 297], [297, 332], [332, 284], [284, 251], [251, 389], [389, 356], [356, 454], [454, 323], [323, 361], [361, 288], [288, 397], [397, 365], [365, 379], [379, 378], [378, 400], [400, 377], [377, 152], [152, 148], [148, 176], [176, 149], [149, 150], [150, 136], [136, 172], [172, 58], [58, 132], [132, 93], [93, 234], [234, 127], [127, 162], [162, 21], [21, 54], [54, 103], [103, 67], [67, 109], [109, 10]
-          ];
-          ctx.strokeStyle = '#60a5fa';
-          ctx.lineWidth = 1.5;
-          ctx.globalAlpha = 0.7;
-          for (const [a, b] of connections) {
-            if (face[a] && face[b]) {
+          if (showSkeletonOverlay) {
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 2;
+            // Draw points (mirrored)
+            for (const pt of face) {
               ctx.beginPath();
-              ctx.moveTo((canvas.width - face[a].x * canvas.width), face[a].y * canvas.height);
-              ctx.lineTo((canvas.width - face[b].x * canvas.width), face[b].y * canvas.height);
-              ctx.stroke();
+              ctx.arc((canvas.width - pt.x * canvas.width), pt.y * canvas.height, 2, 0, 2 * Math.PI);
+              ctx.fillStyle = '#60a5fa';
+              ctx.fill();
             }
+            // Draw mesh lines (mirrored)
+            const connections = [
+              [10, 338], [338, 297], [297, 332], [332, 284], [284, 251], [251, 389], [389, 356], [356, 454], [454, 323], [323, 361], [361, 288], [288, 397], [397, 365], [365, 379], [379, 378], [378, 400], [400, 377], [377, 152], [152, 148], [148, 176], [176, 149], [149, 150], [150, 136], [136, 172], [172, 58], [58, 132], [132, 93], [93, 234], [234, 127], [127, 162], [162, 21], [21, 54], [54, 103], [103, 67], [67, 109], [109, 10]
+            ];
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.7;
+            for (const [a, b] of connections) {
+              if (face[a] && face[b]) {
+                ctx.beginPath();
+                ctx.moveTo((canvas.width - face[a].x * canvas.width), face[a].y * canvas.height);
+                ctx.lineTo((canvas.width - face[b].x * canvas.width), face[b].y * canvas.height);
+                ctx.stroke();
+              }
+            }
+            ctx.globalAlpha = 1.0;
           }
-          ctx.globalAlpha = 1.0;
-
           // Eye closed detection (using eye aspect ratio)
           // Left eye: [33, 160, 158, 133, 153, 144], Right eye: [362, 385, 387, 263, 373, 380]
           function eyeAspectRatio(eyeIdx: number[]) {
@@ -391,7 +392,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
 
       // Pose skeleton
       const poseResult = poseLandmarker.detectForVideo(video, performance.now());
-      if (poseResult.landmarks && poseResult.landmarks.length > 0) {
+      if (poseResult.landmarks && poseResult.landmarks.length > 0 && showSkeletonOverlay) {
         for (const pose of poseResult.landmarks) {
           // Draw all 33 pose landmarks (mirrored)
           for (const point of pose) {
@@ -469,7 +470,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
     };
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [isRunning, modelReady, wakeUpDelay, showImagePopups, muteAlertSounds]);
+  }, [isRunning, modelReady, wakeUpDelay, showImagePopups, muteAlertSounds, showSkeletonOverlay]);
 
 
 
