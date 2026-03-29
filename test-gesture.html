@@ -113,6 +113,16 @@
       return belowCount / history.length >= MIN_ABOVE_HIP_RATIO;
     }
 
+    function checkInTorsoZone(history, torsoHeight) {
+      if (history.length < 3) return false;
+      const margin = torsoHeight > 0.01 ? torsoHeight * HIP_MARGIN_RATIO : 0.02;
+      const inZone = history.filter(p =>
+        p.shoulderMidY !== undefined && p.hipMidY !== undefined &&
+        p.y >= p.shoulderMidY - margin && p.y <= p.hipMidY - margin
+      ).length;
+      return inZone / history.length >= MIN_ABOVE_HIP_RATIO;
+    }
+
     function addLog(msg) {
       const line = document.createElement('div');
       line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -324,7 +334,8 @@
       debugEl.textContent = `Torso: ${(torsoHeight * 100).toFixed(1)}% | minY: ${(minDispY * 100).toFixed(1)}% minX: ${(minDispX * 100).toFixed(1)}% | Y rev: [${yRev0}, ${yRev1}]/${REQUIRED_REVERSALS} opp: ${(oppositeRatio * 100).toFixed(0)}% | X rev: ${minXReversals}/${REQUIRED_REVERSALS}`;
 
       const rickrollBlocked = yRev0 >= REQUIRED_REVERSALS || yRev1 >= REQUIRED_REVERSALS;
-      if (minXReversals >= REQUIRED_REVERSALS && !rickrollBlocked && now - lastGestureTime.rickroll > COOLDOWN_MS) {
+      const rickrollInZone = checkInTorsoZone(wristHistories[0], torsoHeight) && checkInTorsoZone(wristHistories[1], torsoHeight);
+      if (minXReversals >= REQUIRED_REVERSALS && !rickrollBlocked && rickrollInZone && now - lastGestureTime.rickroll > COOLDOWN_MS) {
         lastGestureTime.rickroll = now;
         statusEl.textContent = 'Status: RICKROLL DETECTED!';
         addLog('Rickroll gesture detected!');

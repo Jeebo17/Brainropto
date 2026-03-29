@@ -44,7 +44,7 @@ function buildEmbedUrl(input: string): { url: string; type: VideoType } | null {
 
 type GestureType = '67' | 'rickroll';
 
-type PositionEntry = { x: number; y: number; time: number; shoulderMidY?: number; bodyCenterX?: number };
+type PositionEntry = { x: number; y: number; time: number; shoulderMidY?: number; hipMidY?: number; bodyCenterX?: number };
 
 const GESTURE_WINDOW_MS = 3000; // 3 second window
 // Displacement thresholds as a proportion of torso height
@@ -80,6 +80,17 @@ function checkBelowShoulderRatio(history: PositionEntry[], torsoHeight: number |
   // Y=0 is top, Y=1 is bottom: wrist must be below shoulders
   const belowCount = entries.filter(p => p.y >= p.shoulderMidY! - margin).length;
   return belowCount / entries.length >= MIN_BELOW_SHOULDER_RATIO;
+}
+
+// Check that a wrist was between shoulder and hip level for enough of the gesture window
+function checkInTorsoZone(history: PositionEntry[], torsoHeight: number | null): boolean {
+  const entries = history.filter(p => p.shoulderMidY !== undefined && p.hipMidY !== undefined);
+  if (entries.length < 3) return false;
+  const margin = torsoHeight ? torsoHeight * HIP_MARGIN_RATIO : 0.02;
+  const inZoneCount = entries.filter(p =>
+    p.y >= p.shoulderMidY! - margin && p.y <= p.hipMidY! - margin
+  ).length;
+  return inZoneCount / entries.length >= MIN_BELOW_SHOULDER_RATIO;
 }
 
 // Count direction reversals along one axis within a position history
@@ -163,7 +174,9 @@ function detectGesture(
     const yRev1r = countReversals(handHistories[1].map((p) => p.y), minDispY);
     const hasSignificantY = yRev0r >= REQUIRED_REVERSALS || yRev1r >= REQUIRED_REVERSALS;
 
-    if (!hasSignificantY) {
+    if (!hasSignificantY
+      && checkInTorsoZone(handHistories[0], torsoHeight)
+      && checkInTorsoZone(handHistories[1], torsoHeight)) {
       const bothHaveSweeps = handHistories.slice(0, 2).every((history) => {
         if (history.length < 3) return false;
         const xValues = history.map((p) => p.bodyCenterX !== undefined ? p.x - p.bodyCenterX : p.x);
@@ -368,8 +381,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     sortedWrists.forEach((wrist, slotIndex) => {
       const history = handHistoriesRef.current[slotIndex];
       const shoulderMidY = (pose[LEFT_SHOULDER].y + pose[RIGHT_SHOULDER].y) / 2;
+      const hipMidY = (pose[LEFT_HIP].y + pose[RIGHT_HIP].y) / 2;
       const bodyCenterX = (pose[LEFT_SHOULDER].x + pose[RIGHT_SHOULDER].x) / 2;
-      history.push({ x: wrist.x, y: wrist.y, time: now, shoulderMidY, bodyCenterX });
+      history.push({ x: wrist.x, y: wrist.y, time: now, shoulderMidY, hipMidY, bodyCenterX });
       const cutoff = now - GESTURE_WINDOW_MS;
       while (history.length > 0 && history[0].time < cutoff) {
         history.shift();

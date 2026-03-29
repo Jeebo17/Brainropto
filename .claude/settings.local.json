@@ -5,7 +5,8 @@
       "Bash(npm install:*)",
       "Bash(npm uninstall:*)",
       "Bash(cp \"/mnt/c/Users/olive/OneDrive - University of Bath/Documents/Bath-Hack-2026/src/components/WebcamDetector.tsx\" \"/mnt/c/Users/olive/OneDrive - University of Bath/Documents/Bath-Hack-2026/modelcopy/WebcamDetector.tsx\")",
-      "Bash(cp \"/mnt/c/Users/olive/OneDrive - University of Bath/Documents/Bath-Hack-2026/test-gesture.html\" \"/mnt/c/Users/olive/OneDrive - University of Bath/Documents/Bath-Hack-2026/modelcopy/test-gesture.html\")"
+      "Bash(cp \"/mnt/c/Users/olive/OneDrive - University of Bath/Documents/Bath-Hack-2026/test-gesture.html\" \"/mnt/c/Users/olive/OneDrive - University of Bath/Documents/Bath-Hack-2026/modelcopy/test-gesture.html\")",
+      "Bash(npm run:*)"
     ]
   }
 }
