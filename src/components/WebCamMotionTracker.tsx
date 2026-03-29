@@ -30,6 +30,9 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const [showShushOverlay, setShowShushOverlay] = useState(false);
   const mouthWideOpenRef = useRef(false);
   const shushDetectedRef = useRef(false);
+  // Add timers for gesture hold
+  const shushStartRef = useRef<number | null>(null);
+  const mouthOpenStartRef = useRef<number | null>(null);
 
   // Track eyes closed state and timer
   const eyesClosedRef = useRef(false);
@@ -185,6 +188,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
       // Face mesh
       let eyesClosed = false;
       let mouthWideOpen = false;
+      const now = Date.now();
       const faceResult = faceLandmarker.detectForVideo(video, performance.now());
       if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
         for (const face of faceResult.faceLandmarks) {
@@ -244,12 +248,25 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         }
       }
 
-      if (mouthWideOpen !== mouthWideOpenRef.current) {
-        mouthWideOpenRef.current = mouthWideOpen;
-        setShowCatOverlay(showImagePopups && mouthWideOpen);
+      // Add 1s delay for mouth open
+      if (mouthWideOpen) {
+        if (!mouthOpenStartRef.current) {
+          mouthOpenStartRef.current = now;
+        }
+        if (now - (mouthOpenStartRef.current || 0) >= 1000) {
+          if (!mouthWideOpenRef.current) {
+            mouthWideOpenRef.current = true;
+            setShowCatOverlay(showImagePopups && true);
+          }
+        }
+      } else {
+        mouthOpenStartRef.current = null;
+        if (mouthWideOpenRef.current) {
+          mouthWideOpenRef.current = false;
+          setShowCatOverlay(false);
+        }
       }
       // Eyes closed delay logic
-      const now = Date.now();
       if (eyesClosed) {
         if (!eyesClosedRef.current) {
           eyesClosedStartRef.current = now;
@@ -313,9 +330,23 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         }
       }
 
-      if (shushDetected !== shushDetectedRef.current) {
-        shushDetectedRef.current = shushDetected;
-        setShowShushOverlay(showImagePopups && shushDetected);
+      // Add 1s delay for shush
+      if (shushDetected) {
+        if (!shushStartRef.current) {
+          shushStartRef.current = now;
+        }
+        if (now - (shushStartRef.current || 0) >= 1000) {
+          if (!shushDetectedRef.current) {
+            shushDetectedRef.current = true;
+            setShowShushOverlay(showImagePopups && true);
+          }
+        }
+      } else {
+        shushStartRef.current = null;
+        if (shushDetectedRef.current) {
+          shushDetectedRef.current = false;
+          setShowShushOverlay(false);
+        }
       }
 
       // Use face landmarks for head, hand landmarks for hands
