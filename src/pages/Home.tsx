@@ -5,6 +5,7 @@ import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
 import tileData from '../data/tileData.json';
 import { TileType } from '../types/Types';
+import { WebCamMotionTracker } from '../components/WebCamMotionTracker';
 
 const TILE_DRAG_MIME = 'application/x-bathhack-tile';
 type SnapSide = 'left' | 'right';
@@ -117,16 +118,11 @@ export function Home() {
         event.preventDefault();
         const droppedTile = getDraggedTile(event);
         setActiveDropZone(null);
-
-        if (!droppedTile) {
-            return;
-        }
-
+        if (!droppedTile) return;
         if (side === 'left') {
             setLeftTile(droppedTile);
             return;
         }
-
         setRightTile(droppedTile);
     };
 
