@@ -11,63 +11,6 @@ const TILE_DRAG_MIME = 'application/x-bathhack-tile';
 type SnapSide = 'left' | 'right';
 
 export function Home() {
-        // Draggable webcam tracker state
-        const [webcamPos, setWebcamPos] = useState<{ x: number; y: number } | null>(null);
-        const webcamDragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
-
-        // Default position: bottom left, 16px from edge
-        const getWebcamStyle = () => {
-            if (webcamPos) {
-                return {
-                    position: 'fixed',
-                    left: webcamPos.x,
-                    top: webcamPos.y,
-                    zIndex: 9999,
-                    margin: 0,
-                    padding: 0,
-                    cursor: 'move',
-                    pointerEvents: 'all' as React.CSSProperties['pointerEvents'],
-                };
-            } else {
-                return {
-                    position: 'fixed',
-                    left: 16,
-                    bottom: 16,
-                    zIndex: 9999,
-                    margin: 0,
-                    padding: 0,
-                    cursor: 'move',
-                    pointerEvents: 'all' as React.CSSProperties['pointerEvents'],
-                };
-            }
-        };
-
-        // Mouse event handlers for dragging
-        const handleWebcamMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-            e.preventDefault();
-            const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const offsetY = e.clientY - rect.top;
-            webcamDragRef.current = { offsetX, offsetY };
-            window.addEventListener('mousemove', handleWebcamMouseMove as any);
-            window.addEventListener('mouseup', handleWebcamMouseUp as any);
-        };
-        const handleWebcamMouseMove = (e: MouseEvent) => {
-            if (!webcamDragRef.current) return;
-            setWebcamPos(prev => {
-                const width = 220; // adjust if needed
-                const height = 170; // adjust if needed
-                return {
-                    x: Math.max(0, Math.min(window.innerWidth - width, e.clientX - webcamDragRef.current!.offsetX)),
-                    y: Math.max(0, Math.min(window.innerHeight - height, e.clientY - webcamDragRef.current!.offsetY)),
-                };
-            });
-        };
-        const handleWebcamMouseUp = () => {
-            webcamDragRef.current = null;
-            window.removeEventListener('mousemove', handleWebcamMouseMove as any);
-            window.removeEventListener('mouseup', handleWebcamMouseUp as any);
-        };
     const [leftTile, setLeftTile] = useState<TileType | null>(null);
     const [rightTile, setRightTile] = useState<TileType | null>(null);
     const [activeDropZone, setActiveDropZone] = useState<SnapSide | null>(null);
@@ -220,14 +163,6 @@ export function Home() {
 
     return (
         <main className="w-full max-w-none h-[calc(100vh-88px)] bg-[#061126] text-slate-100">
-            {/* Draggable WebCamMotionTracker */}
-            <div
-                style={getWebcamStyle()}
-                onMouseDown={handleWebcamMouseDown}
-            >
-                <WebCamMotionTracker small={true} />
-            </div>
-
             <div className="relative w-full h-full overflow-hidden">
                 {show67Indicator && (
                     <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none">

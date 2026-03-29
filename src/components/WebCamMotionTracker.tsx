@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { FaceLandmarker, PoseLandmarker, HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { useSettings } from '../context/SettingsContext';
+import dogImage from '../assets/dog.png';
 
 interface WebCamMotionTrackerProps {
   small?: boolean;
 }
 
 export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
-    // Track hands-on-head state and timer
-    const handsOnHeadRef = useRef(false);
-    const handsOnHeadStartRef = useRef<number | null>(null);
-    const handsOnHeadPlayedRef = useRef(false);
+  // Track hands-on-head state and timer
+  const handsOnHeadRef = useRef(false);
+  const handsOnHeadStartRef = useRef<number | null>(null);
+  const handsOnHeadPlayedRef = useRef(false);
+  const cookedDogAudioRef = useRef<HTMLAudioElement | null>(null);
   const { wakeUpDelay } = useSettings();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,6 +22,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const [modelReady, setModelReady] = useState(false);
   const [status, setStatus] = useState('Loading models...');
   const [isRunning, setIsRunning] = useState(false);
+  const [showCookedDog, setShowCookedDog] = useState(false);
 
   // Track eyes closed state and timer
   const eyesClosedRef = useRef(false);
@@ -80,6 +83,11 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
     loadModels();
     return () => {
       cancelled = true;
+      if (cookedDogAudioRef.current) {
+        cookedDogAudioRef.current.pause();
+        cookedDogAudioRef.current.currentTime = 0;
+        cookedDogAudioRef.current = null;
+      }
       if (faceLandmarkerRef.current) {
         faceLandmarkerRef.current.close();
         faceLandmarkerRef.current = null;
@@ -249,10 +257,29 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         handsOnHeadRef.current = true;
         if (
           handsOnHeadStartRef.current &&
-          now - handsOnHeadStartRef.current > 3000 // 3 seconds
+          now - handsOnHeadStartRef.current > 1000 // 1 second
         ) {
           if (!handsOnHeadPlayedRef.current) {
-            new Audio('/WAKE_UP.mp3').play().catch(() => {});
+            if (cookedDogAudioRef.current) {
+              cookedDogAudioRef.current.pause();
+              cookedDogAudioRef.current.currentTime = 0;
+              cookedDogAudioRef.current = null;
+            }
+            const dogAudio = new Audio('/cooked-dog-meme.mp3');
+            cookedDogAudioRef.current = dogAudio;
+            setShowCookedDog(true);
+            dogAudio.onended = () => {
+              setShowCookedDog(false);
+              if (cookedDogAudioRef.current === dogAudio) {
+                cookedDogAudioRef.current = null;
+              }
+            };
+            dogAudio.play().catch(() => {
+              setShowCookedDog(false);
+              if (cookedDogAudioRef.current === dogAudio) {
+                cookedDogAudioRef.current = null;
+              }
+            });
             handsOnHeadPlayedRef.current = true;
           }
         }
@@ -260,6 +287,13 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         handsOnHeadRef.current = false;
         handsOnHeadStartRef.current = null;
         handsOnHeadPlayedRef.current = false;
+        if (cookedDogAudioRef.current) {
+          cookedDogAudioRef.current.onended = null;
+          cookedDogAudioRef.current.pause();
+          cookedDogAudioRef.current.currentTime = 0;
+          cookedDogAudioRef.current = null;
+        }
+        setShowCookedDog(false);
       }
 
       // Pose skeleton
@@ -361,6 +395,12 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
             background: !isRunning ? '#181e2a' : 'transparent',
             transition: 'background 0.2s',
           }}
+        />
+        <img
+          src={dogImage}
+          alt="Cooked dog"
+          className="fixed inset-0 w-screen h-screen object-cover pointer-events-none transition-opacity duration-1000 z-50"
+          style={{ opacity: showCookedDog ? 1 : 0 }}
         />
         {/* Status overlay inside preview, only show when not running */}
         {!isRunning && status && (
