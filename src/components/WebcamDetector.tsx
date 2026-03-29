@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 type HandPoint = {
@@ -189,11 +189,40 @@ function detectGesture(
   return null;
 }
 
-interface WebcamDetectorProps {
-  onGesture?: (gesture: GestureType) => void;
+type GestureLogEntry = { gesture: GestureType; timestamp: number };
+
+export function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
+let ytApiReady: Promise<void> | null = null;
+function loadYouTubeApi(): Promise<void> {
+  if (ytApiReady) return ytApiReady;
+  ytApiReady = new Promise<void>((resolve) => {
+    if (window.YT?.Player) { resolve(); return; }
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { prev?.(); resolve(); };
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+  });
+  return ytApiReady;
+}
+
+export type { GestureLogEntry };
+
+export interface WebcamDetectorHandle {
+  seekTo: (seconds: number) => void;
+}
+
+interface WebcamDetectorProps {
+  onGesture?: (gesture: GestureType) => void;
+  onGestureLog?: (entry: GestureLogEntry) => void;
+}
+
+export const WebcamDetector = forwardRef<WebcamDetectorHandle, WebcamDetectorProps>(function WebcamDetector({ onGesture, onGestureLog }, ref) {
   const captureVideoRef = useRef<HTMLVideoElement>(null);
   const directVideoRef = useRef<HTMLVideoElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -211,7 +240,10 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const lastGestureTimeRef = useRef<Record<GestureType, number>>({ '67': 0, rickroll: 0 });
   const onGestureRef = useRef(onGesture);
   onGestureRef.current = onGesture;
-
+  const onGestureLogRef = useRef(onGestureLog);
+  onGestureLogRef.current = onGestureLog;
+  const ytPlayerRef = useRef<YTPlayer | null>(null);
+  const ytContainerRef = useRef<HTMLDivElement>(null);
   const [modelReady, setModelReady] = useState(false);
   const [lastGesture, setLastGesture] = useState<string | null>(null);
   const [videoInput, setVideoInput] = useState('');
@@ -227,6 +259,16 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const [statusText, setStatusText] = useState(
     'Loading pose detection model...'
   );
+
+  const seekToTimestamp = useCallback((seconds: number) => {
+    if (videoType === 'other' && directVideoRef.current) {
+      directVideoRef.current.currentTime = seconds;
+    } else if (videoType === 'youtube' && ytPlayerRef.current?.seekTo) {
+      ytPlayerRef.current.seekTo(seconds, true);
+    }
+  }, [videoType]);
+
+  useImperativeHandle(ref, () => ({ seekTo: seekToTimestamp }), [seekToTimestamp]);
 
   // Initialize HandLandmarker model on mount
   useEffect(() => {
@@ -449,6 +491,14 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       lastGestureTimeRef.current[gesture] = now;
       setLastGesture(gesture);
       console.log(`[${new Date().toLocaleTimeString()}] Gesture Detected: ${gesture}`);
+      let videoTimestamp = 0;
+      if (videoTypeRef.current === 'other' && directVideoRef.current) {
+        videoTimestamp = directVideoRef.current.currentTime;
+      } else if (videoTypeRef.current === 'youtube' && ytPlayerRef.current?.getCurrentTime) {
+        videoTimestamp = ytPlayerRef.current.getCurrentTime();
+      }
+      const entry: GestureLogEntry = { gesture, timestamp: videoTimestamp };
+      onGestureLogRef.current?.(entry);
       onGestureRef.current?.(gesture);
       handHistoriesRef.current = [[], []];
     }
@@ -543,6 +593,32 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       if (uploadedVideoUrl) URL.revokeObjectURL(uploadedVideoUrl);
     };
   }, [uploadedVideoUrl]);
+
+  // Initialize YouTube IFrame API player when a YouTube URL is loaded
+  useEffect(() => {
+    if (videoType !== 'youtube' || !embedUrl) return;
+    let destroyed = false;
+
+    const match = embedUrl.match(/embed\/([\w-]+)/);
+    if (!match) return;
+    const videoId = match[1];
+
+    loadYouTubeApi().then(() => {
+      if (destroyed || !ytContainerRef.current) return;
+      ytPlayerRef.current = new window.YT!.Player(ytContainerRef.current, {
+        videoId,
+        width: '100%',
+        height: '100%',
+        playerVars: { autoplay: 0, modestbranding: 1 },
+      });
+    });
+
+    return () => {
+      destroyed = true;
+      ytPlayerRef.current?.destroy();
+      ytPlayerRef.current = null;
+    };
+  }, [embedUrl, videoType]);
 
   const handleLoadVideo = () => {
     const result = buildEmbedUrl(videoInput);
@@ -753,6 +829,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
             muted
             loop
           />
+        ) : embedUrl && videoType === 'youtube' ? (
+          <div ref={ytContainerRef} className="h-full w-full" />
         ) : embedUrl ? (
           <iframe
             ref={iframeRef}
@@ -890,4 +968,4 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
     </div>
   );
-}
+});
