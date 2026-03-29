@@ -5,7 +5,6 @@ import DragZone from '../components/DragZone';
 import DrapAndDropMenu from '../components/DrapAndDropMenu';
 import tileData from '../data/tileData.json';
 import { TileType } from '../types/Types';
-import { WebCamMotionTracker } from '../components/WebCamMotionTracker';
 
 const TILE_DRAG_MIME = 'application/x-bathhack-tile';
 type SnapSide = 'left' | 'right';
@@ -19,7 +18,9 @@ export function Home() {
     const [fullscreenSide, setFullscreenSide] = useState<null | 'left' | 'right'>(null);
     const [floatingPos, setFloatingPos] = useState<{x: number, y: number}>({ x: 40, y: 40 });
     const [show67Indicator, setShow67Indicator] = useState(false);
+    const [showRickrollIndicator, setShowRickrollIndicator] = useState(false);
     const gesture67TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const rickrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const draggingRef = useRef<{side: 'left'|'right'|null, startX: number, startLeft: number, startRight: number}|null>(null);
 
     const floatingDragRef = useRef<{offsetX: number, offsetY: number} | null>(null);
@@ -144,6 +145,9 @@ export function Home() {
             if (gesture67TimeoutRef.current) {
                 clearTimeout(gesture67TimeoutRef.current);
             }
+            if (rickrollTimeoutRef.current) {
+                clearTimeout(rickrollTimeoutRef.current);
+            }
         };
     }, []);
 
@@ -159,6 +163,17 @@ export function Home() {
                 setShow67Indicator(false);
             }, 1000);
         }
+        if (gesture === 'rickroll') {
+            setShowRickrollIndicator(true);
+
+            if (rickrollTimeoutRef.current) {
+                clearTimeout(rickrollTimeoutRef.current);
+            }
+
+            rickrollTimeoutRef.current = setTimeout(() => {
+                setShowRickrollIndicator(false);
+            }, 1000);
+        }
     }, []);
 
     return (
@@ -168,6 +183,14 @@ export function Home() {
                     <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none">
                         <div className="text-[38vw] leading-none font-black uppercase tracking-[-0.08em] text-red-500 drop-shadow-[0_0_30px_rgba(255,0,0,0.95)] animate-pulse select-none">
                             67
+                        </div>
+                    </div>
+                )}
+
+                {showRickrollIndicator && (
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none bg-black/35">
+                        <div className="text-[16vw] leading-none font-black uppercase tracking-[-0.04em] text-fuchsia-400 drop-shadow-[0_0_30px_rgba(232,121,249,0.95)] animate-pulse select-none">
+                            RICKROLL
                         </div>
                     </div>
                 )}
