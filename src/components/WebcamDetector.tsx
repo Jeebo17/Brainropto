@@ -215,7 +215,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
         const landmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task',
+              'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
@@ -838,7 +838,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           <span className="font-semibold">Status:</span> {statusText}
         </p>
         <p>
-          <span className="font-semibold">Model:</span> {modelReady ? 'Ready (PoseLandmarker Heavy)' : 'Loading...'}
+          <span className="font-semibold">Model:</span> {modelReady ? 'Ready (PoseLandmarker Lite)' : 'Loading...'}
         </p>
         <p>
           <span className="font-semibold">Analyzing:</span> {isAnalyzing || isDirectAnalyzing ? 'Yes' : 'No'}
