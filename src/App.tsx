@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
+import { Help } from './pages/Help';
 import WebCamMotionTrackerPage from './pages/WebCamMotionTrackerPage';
 import BrainrotAttack from './components/BrainrotAttack';
 import { WebCamMotionTracker } from './components/WebCamMotionTracker';

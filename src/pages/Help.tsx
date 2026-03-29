@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-export default function Help() {
+export function Help() {
   return (
     <div className="w-full max-w-6xl mx-auto p-6">
       <div className="w-full bg-slate-800 rounded-md p-6 text-slate-200">
