@@ -181,8 +181,6 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const frameInFlightRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const handHistoriesRef = useRef<PositionEntry[][]>([[], []]);
-  const poseBufferRef = useRef<{ x: number; y: number; z: number }[][]>([]);
-  const SMOOTHING_FRAMES = 2;
   const lastGestureTimeRef = useRef<Record<GestureType, number>>({ '67': 0, rickroll: 0 });
   const onGestureRef = useRef(onGesture);
   onGestureRef.current = onGesture;
@@ -289,28 +287,13 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       setHandPosition(null);
       // Clear history when pose is lost (scene cut, model lost tracking)
       handHistoriesRef.current = [[], []];
-      poseBufferRef.current = [];
       return;
     }
 
     const now = Date.now();
     const rawPose = poseLandmarks[0]; // first (only) detected pose
 
-    // Temporal smoothing — average landmarks over last N frames to reduce jitter
-    poseBufferRef.current.push(rawPose);
-    if (poseBufferRef.current.length > SMOOTHING_FRAMES) {
-      poseBufferRef.current.shift();
-    }
-    const buffer = poseBufferRef.current;
-    const pose = rawPose.map((_, i) => {
-      let sumX = 0, sumY = 0, sumZ = 0;
-      for (const frame of buffer) {
-        sumX += frame[i].x;
-        sumY += frame[i].y;
-        sumZ += frame[i].z;
-      }
-      return { x: sumX / buffer.length, y: sumY / buffer.length, z: sumZ / buffer.length };
-    });
+    const pose = rawPose;
 
     const torsoHeight = computeTorsoHeight(pose);
 
