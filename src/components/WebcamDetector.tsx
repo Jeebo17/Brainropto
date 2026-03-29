@@ -288,11 +288,51 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     const canvas = overlayRef.current;
     if (!shell || !canvas) return;
 
-    const width = Math.floor(shell.clientWidth);
-    const height = Math.floor(shell.clientHeight);
-    if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
-      canvas.width = width;
-      canvas.height = height;
+    const video = directVideoRef.current;
+    const isDirectVideo = video?.src && videoTypeRef.current === 'other' && video.videoWidth > 0 && video.videoHeight > 0;
+
+    if (isDirectVideo) {
+      // Size and position canvas to match the rendered video area (inside object-contain letterbox)
+      const containerW = video.clientWidth;
+      const containerH = video.clientHeight;
+      const videoAspect = video.videoWidth / video.videoHeight;
+      const containerAspect = containerW / containerH;
+
+      let renderW: number, renderH: number, offsetX: number, offsetY: number;
+      if (videoAspect > containerAspect) {
+        renderW = containerW;
+        renderH = containerW / videoAspect;
+        offsetX = 0;
+        offsetY = (containerH - renderH) / 2;
+      } else {
+        renderH = containerH;
+        renderW = containerH * videoAspect;
+        offsetX = (containerW - renderW) / 2;
+        offsetY = 0;
+      }
+
+      const w = Math.floor(renderW);
+      const h = Math.floor(renderH);
+      if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      canvas.style.left = `${offsetX}px`;
+      canvas.style.top = `${offsetY}px`;
+      canvas.style.width = `${renderW}px`;
+      canvas.style.height = `${renderH}px`;
+    } else {
+      // For tab capture / iframe, fill the whole container
+      const width = Math.floor(shell.clientWidth);
+      const height = Math.floor(shell.clientHeight);
+      if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      canvas.style.left = '0px';
+      canvas.style.top = '0px';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
     }
   };
 
@@ -333,16 +373,27 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     const rightWrist = pose[RIGHT_WRIST];
     const wrists = [leftWrist, rightWrist];
 
-    // Draw full pose skeleton on the main overlay
-    // Landmarks are normalized to the cropped input region,
-    // so scale x to map onto the full-width overlay
-    const scaleX = overlayScaleXRef.current;
+    // Map normalized landmark coords to canvas pixel coords.
+    // For tab capture (Panopto/YouTube), scale X by the crop ratio.
+    // For direct video, canvas is already sized/positioned to match the video area.
+    const isDirectVideo = !!directVideoRef.current?.src && videoTypeRef.current === 'other';
+    let mapX: (nx: number) => number;
+    let mapY: (ny: number) => number;
+
+    if (isDirectVideo) {
+      mapX = (nx: number) => nx * canvas.width;
+      mapY = (ny: number) => ny * canvas.height;
+    } else {
+      const scaleX = overlayScaleXRef.current;
+      mapX = (nx: number) => nx * scaleX * canvas.width;
+      mapY = (ny: number) => ny * canvas.height;
+    }
 
     if (showSkeletonOverlay) {
       // Draw all 33 pose landmarks
       for (const point of pose) {
         ctx.beginPath();
-        ctx.arc(point.x * scaleX * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
+        ctx.arc(mapX(point.x), mapY(point.y), 2, 0, 2 * Math.PI);
         ctx.fillStyle = '#60a5fa';
         ctx.fill();
       }
@@ -358,8 +409,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       ctx.globalAlpha = 0.4;
       for (const [a, b] of connections) {
         ctx.beginPath();
-        ctx.moveTo(pose[a].x * scaleX * canvas.width, pose[a].y * canvas.height);
-        ctx.lineTo(pose[b].x * scaleX * canvas.width, pose[b].y * canvas.height);
+        ctx.moveTo(mapX(pose[a].x), mapY(pose[a].y));
+        ctx.lineTo(mapX(pose[b].x), mapY(pose[b].y));
         ctx.stroke();
       }
       ctx.globalAlpha = 1.0;
@@ -370,14 +421,14 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       wrists.forEach((wrist, i) => {
         const color = i === 0 ? '#22c55e' : '#f59e0b';
         ctx.beginPath();
-        ctx.arc(wrist.x * scaleX * canvas.width, wrist.y * canvas.height, 8, 0, 2 * Math.PI);
+        ctx.arc(mapX(wrist.x), mapY(wrist.y), 8, 0, 2 * Math.PI);
         ctx.strokeStyle = color;
         ctx.lineWidth = 3;
         ctx.stroke();
 
         ctx.fillStyle = color;
         ctx.font = 'bold 12px sans-serif';
-        ctx.fillText(i === 0 ? 'L' : 'R', wrist.x * scaleX * canvas.width - 4, wrist.y * canvas.height - 12);
+        ctx.fillText(i === 0 ? 'L' : 'R', mapX(wrist.x) - 4, mapY(wrist.y) - 12);
       });
     }
 
@@ -778,7 +829,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
             <p className="text-sm text-slate-500">or paste a Panopto / YouTube link below</p>
           </div>
         )}
-        <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+        <canvas ref={overlayRef} className="pointer-events-none absolute" />
       </div>
 
       {/* Hidden video for tab capture */}
