@@ -193,7 +193,6 @@ export function Home() {
                                 onDragLeaveZone={() => {}}
                                 onDropInZone={() => {}}
                                 onClearTile={() => setFullscreenSide(null)}
-                                showFullscreen={false}
                             />
                         </div>
                         {/* Floating modal for the other video */}
@@ -219,7 +218,6 @@ export function Home() {
                                         if (fullscreenSide === 'left') setRightTile(null);
                                         else setLeftTile(null);
                                     }}
-                                    showFullscreen={false}
                                 />
                             </div>
                         ) : null}
@@ -238,8 +236,6 @@ export function Home() {
                                     onDragLeaveZone={handleDragLeaveZone}
                                     onDropInZone={handleDropInZone}
                                     onClearTile={clearTile}
-                                    showFullscreen={true}
-                                    onFullscreen={() => setFullscreenSide('left')}
                                 />
                                 {/* Drag handle for resizing left */}
                                 <div
@@ -274,8 +270,6 @@ export function Home() {
                                     onDragLeaveZone={handleDragLeaveZone}
                                     onDropInZone={handleDropInZone}
                                     onClearTile={clearTile}
-                                    showFullscreen={true}
-                                    onFullscreen={() => setFullscreenSide('right')}
                                 />
                             </div>
                         )}
