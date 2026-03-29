@@ -95,16 +95,23 @@ function App() {
               Home
             </Link>
             <Link
+              to="/webcam-motion-tracker"
+              className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
+            >
+              Webcam Motion Tracker
+            </Link>
+            <Link
               to="/settings"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
             >
               Settings
             </Link>
             <Link
-              to="/webcam-motion-tracker"
+              to="/help"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
             >
-              Webcam Motion Tracker
+              Help
+
             </Link>
           </nav>
         </div>
@@ -113,9 +120,10 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
-        <Route path="/settings" element={<Settings />} />
         <Route path="/webcam-motion-tracker" element={<WebCamMotionTrackerPage />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
+        <Route path="/help" element={<Help />} />
       </Routes>
     </div>
   );

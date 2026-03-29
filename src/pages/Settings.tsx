@@ -62,7 +62,7 @@ export function Settings() {
                     <div>
                         <label className="block text-lg font-semibold text-slate-200 mb-2">
                             Pipe Frequency: <span className="text-blue-300">{100 - Math.round((pipeFrequency / 1000) * 100) + 1}%</span>
-                            <span className="block text-xs text-slate-400 font-normal">% chance of pipe per hour</span>
+                            <span className="block text-xs text-slate-400 font-normal">% chance of pipe</span>
                         </label>
                         <input
                             type="range"

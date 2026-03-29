@@ -168,21 +168,16 @@ interface WebcamDetectorProps {
 
 export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const captureVideoRef = useRef<HTMLVideoElement>(null);
-  const directVideoRef = useRef<HTMLVideoElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const debugOverlayRef = useRef<HTMLCanvasElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const playerShellRef = useRef<HTMLDivElement>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const directAnimFrameRef = useRef<number | null>(null);
   const frameInFlightRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const handHistoriesRef = useRef<PositionEntry[][]>([[], []]);
-  const poseBufferRef = useRef<{ x: number; y: number; z: number }[][]>([]);
-  const SMOOTHING_FRAMES = 2;
   const lastGestureTimeRef = useRef<Record<GestureType, number>>({ '67': 0, rickroll: 0 });
   const onGestureRef = useRef(onGesture);
   onGestureRef.current = onGesture;
@@ -191,14 +186,11 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
   const [lastGesture, setLastGesture] = useState<string | null>(null);
   const [videoInput, setVideoInput] = useState('');
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
-  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   const [videoType, setVideoType] = useState<VideoType>('other');
   const videoTypeRef = useRef<VideoType>('other');
   const [isSharing, setIsSharing] = useState(false);
-  const [isDirectAnalyzing, setIsDirectAnalyzing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [handPosition, setHandPosition] = useState<HandPoint | null>(null);
-  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [statusText, setStatusText] = useState(
     'Loading pose detection model...'
   );
@@ -287,31 +279,11 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
     if (!poseLandmarks || poseLandmarks.length === 0) {
       setHandPosition(null);
-      // Clear history when pose is lost (scene cut, model lost tracking)
-      handHistoriesRef.current = [[], []];
-      poseBufferRef.current = [];
       return;
     }
 
     const now = Date.now();
-    const rawPose = poseLandmarks[0]; // first (only) detected pose
-
-    // Temporal smoothing — average landmarks over last N frames to reduce jitter
-    poseBufferRef.current.push(rawPose);
-    if (poseBufferRef.current.length > SMOOTHING_FRAMES) {
-      poseBufferRef.current.shift();
-    }
-    const buffer = poseBufferRef.current;
-    const pose = rawPose.map((_, i) => {
-      let sumX = 0, sumY = 0, sumZ = 0;
-      for (const frame of buffer) {
-        sumX += frame[i].x;
-        sumY += frame[i].y;
-        sumZ += frame[i].z;
-      }
-      return { x: sumX / buffer.length, y: sumY / buffer.length, z: sumZ / buffer.length };
-    });
-
+    const pose = poseLandmarks[0]; // first (only) detected pose
     const torsoHeight = computeTorsoHeight(pose);
 
     // Extract wrist positions
@@ -365,11 +337,9 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
     setHandPosition({ x: leftWrist.x, y: leftWrist.y, z: leftWrist.z });
 
-    // Track wrist position history for gesture detection
-    // Sort wrists by X position so the same physical hand always maps to the same slot
-    const sortedWrists = [...wrists].sort((a, b) => a.x - b.x);
-    sortedWrists.forEach((wrist, slotIndex) => {
-      const history = handHistoriesRef.current[slotIndex];
+    // Track wrist position history for gesture detection (same as before)
+    wrists.forEach((wrist, handIndex) => {
+      const history = handHistoriesRef.current[handIndex];
       history.push({ x: wrist.x, y: wrist.y, time: now });
       const cutoff = now - GESTURE_WINDOW_MS;
       while (history.length > 0 && history[0].time < cutoff) {
@@ -435,7 +405,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     if (gesture && now - lastGestureTimeRef.current[gesture] > GESTURE_COOLDOWN_MS) {
       lastGestureTimeRef.current[gesture] = now;
       setLastGesture(gesture);
-      console.log(`[${new Date().toLocaleTimeString()}] Gesture Detected: ${gesture}`);
+      console.log(`[Gesture Detected] ${gesture}`);
       onGestureRef.current?.(gesture);
       handHistoriesRef.current = [[], []];
     }
@@ -457,91 +427,11 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     };
   }, []);
 
-  // --- File upload handlers ---
-  const handleFileUpload = (file: File) => {
-    if (uploadedVideoUrl) URL.revokeObjectURL(uploadedVideoUrl);
-    // Clear embed URL so the iframe hides
-    setEmbedUrl(null);
-    setIsSharing(false);
-    const url = URL.createObjectURL(file);
-    setUploadedVideoUrl(url);
-    setVideoType('other');
-    videoTypeRef.current = 'other';
-    overlayScaleXRef.current = 1.0;
-    setStatusText('Video file loaded. Playing and analyzing...');
-  };
-
-  const handleFileDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingFile(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('video/')) {
-      handleFileUpload(file);
-    }
-  };
-
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileUpload(file);
-  };
-
-  // --- Direct video analysis loop (for uploaded files) ---
-  useEffect(() => {
-    if (!uploadedVideoUrl || !modelReady) return;
-
-    const video = directVideoRef.current;
-    const landmarker = poseLandmarkerRef.current;
-    if (!video || !landmarker) return;
-
-    let cancelled = false;
-
-    const loop = () => {
-      if (cancelled || !directVideoRef.current || !poseLandmarkerRef.current) return;
-
-      const v = directVideoRef.current;
-      if (!v.paused && !v.ended && v.readyState >= 2) {
-        try {
-          const result = poseLandmarkerRef.current.detectForVideo(v, performance.now());
-          processResults(result.landmarks);
-          setIsDirectAnalyzing(true);
-        } catch (err) {
-          console.error('Direct video detection error:', err);
-        }
-      }
-
-      directAnimFrameRef.current = requestAnimationFrame(loop);
-    };
-
-    directAnimFrameRef.current = requestAnimationFrame(loop);
-
-    return () => {
-      cancelled = true;
-      if (directAnimFrameRef.current) {
-        cancelAnimationFrame(directAnimFrameRef.current);
-        directAnimFrameRef.current = null;
-      }
-      setIsDirectAnalyzing(false);
-    };
-  }, [uploadedVideoUrl, modelReady, processResults]);
-
-  // Clean up uploaded video URL on unmount
-  useEffect(() => {
-    return () => {
-      if (uploadedVideoUrl) URL.revokeObjectURL(uploadedVideoUrl);
-    };
-  }, [uploadedVideoUrl]);
-
   const handleLoadVideo = () => {
     const result = buildEmbedUrl(videoInput);
     if (!result) {
       setStatusText('Could not parse URL. Paste a Panopto, YouTube, or embed link.');
       return;
-    }
-
-    // Clear uploaded file if switching to URL mode
-    if (uploadedVideoUrl) {
-      URL.revokeObjectURL(uploadedVideoUrl);
-      setUploadedVideoUrl(null);
     }
 
     setEmbedUrl(result.url);
@@ -578,7 +468,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
       setStatusText('Load a video first.');
       return;
     }
-    // new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
+    new Audio('/pipe.mp3').play().then(audio => audio).catch(() => {});
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' } as MediaTrackConstraints,
@@ -722,25 +612,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
 
   return (
     <div className="order-2 flex h-full w-full flex-col gap-4 p-4 bg-[#061126] border border-[#1a2d4a] rounded-lg shadow-lg overflow-auto text-slate-100">
-      <div
-        ref={playerShellRef}
-        className={`relative w-full overflow-hidden rounded-lg bg-[#050b1a] border ${isDraggingFile ? 'border-blue-400 border-dashed' : 'border-[#1a2d4a]'}`}
-        style={{ aspectRatio: '16 / 9' }}
-        onDragOver={(e) => { e.preventDefault(); setIsDraggingFile(true); }}
-        onDragLeave={() => setIsDraggingFile(false)}
-        onDrop={handleFileDrop}
-      >
-        {uploadedVideoUrl ? (
-          <video
-            ref={directVideoRef}
-            src={uploadedVideoUrl}
-            className="h-full w-full object-contain"
-            controls
-            autoPlay
-            muted
-            loop
-          />
-        ) : embedUrl ? (
+      <div ref={playerShellRef} className="relative w-full overflow-hidden rounded-lg bg-[#050b1a] border border-[#1a2d4a]" style={{ aspectRatio: '16 / 9' }}>
+        {embedUrl ? (
           <iframe
             ref={iframeRef}
             src={embedUrl}
@@ -750,9 +623,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
             allow="autoplay; encrypted-media"
           />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center text-slate-400 gap-3">
-            <p className="text-lg">Drag & drop a video file here</p>
-            <p className="text-sm text-slate-500">or paste a Panopto / YouTube link below</p>
+          <div className="flex h-full w-full items-center justify-center text-slate-400">
+            <p className="text-lg">Paste a Panopto or YouTube link above to load a video</p>
           </div>
         )}
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
@@ -794,29 +666,14 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
         <p className="text-sm text-slate-200">
           {!modelReady
             ? 'Loading pose detection model...'
-            : 'Upload a video file, or paste a Panopto/YouTube link.'}
+            : 'Paste a Panopto or YouTube link, then click "Start Capture" to share this tab.'}
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!modelReady}
-            className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
-          >
-            Upload Video
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*"
-            onChange={handleFileInputChange}
-            className="hidden"
-          />
           <input
             type="text"
             value={videoInput}
             onChange={(e) => setVideoInput(e.target.value)}
-            placeholder="Or paste Panopto / YouTube URL"
+            placeholder="Panopto or YouTube URL"
             className="w-full rounded-md border border-[#1a2d4a] bg-[#061126] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400"
           />
           <button
@@ -825,27 +682,25 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
             disabled={!modelReady}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            Load URL
+            Load
           </button>
-          {!uploadedVideoUrl && (
-            !isSharing ? (
-              <button
-                type="button"
-                onClick={handleStartCapture}
-                disabled={!embedUrl || !modelReady}
-                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                Start Capture
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleStopSharing}
-                className="rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
-              >
-                Stop Capture
-              </button>
-            )
+          {!isSharing ? (
+            <button
+              type="button"
+              onClick={handleStartCapture}
+              disabled={!embedUrl || !modelReady}
+              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Start Capture
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleStopSharing}
+              className="rounded-md bg-[#16325f] px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-[#1d3c71]"
+            >
+              Stop Capture
+            </button>
           )}
         </div>
       </div>
@@ -858,7 +713,7 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
           <span className="font-semibold">Model:</span> {modelReady ? 'Ready (PoseLandmarker Heavy)' : 'Loading...'}
         </p>
         <p>
-          <span className="font-semibold">Analyzing:</span> {isAnalyzing || isDirectAnalyzing ? 'Yes' : 'No'}
+          <span className="font-semibold">Analyzing:</span> {isAnalyzing ? 'Yes' : 'No'}
         </p>
         <p>
           <span className="font-semibold">Capturing:</span> {isSharing ? 'Yes' : 'No'}

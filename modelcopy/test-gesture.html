@@ -224,10 +224,8 @@
         ctx.fillText(i === 0 ? 'L' : 'R', wrist.x * canvas.width - 5, wrist.y * canvas.height - 14);
       });
 
-      // Track wrist history — sort by X so same physical hand stays in same slot
-      // Prevents false triggers when pose model swaps left/right assignment
-      const sortedWrists = [...wrists].sort((a, b) => a.x - b.x);
-      sortedWrists.forEach((wrist, i) => {
+      // Track wrist history
+      wrists.forEach((wrist, i) => {
         const history = wristHistories[i];
         history.push({ x: wrist.x, y: wrist.y, time: now });
         const cutoff = now - GESTURE_WINDOW_MS;
