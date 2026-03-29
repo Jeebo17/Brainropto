@@ -19,6 +19,8 @@ export function Settings() {
         setMuteAlertSounds,
         enablePipeSound,
         setEnablePipeSound,
+        showSkeletonOverlay,
+        setShowSkeletonOverlay,
     } = useSettings();
 
     return (
@@ -162,6 +164,20 @@ export function Settings() {
                             className="mt-1 h-5 w-5 accent-blue-400"
                         />
                     </label>
+                    
+                    <label className="flex items-start justify-between gap-4 px-4 py-3 border-b pb-6 border-[#1a2d4a]">
+                        <span>
+                            <span className="block text-lg font-semibold text-slate-200">Show skeleton overlay</span>
+                            <span className="block text-xs text-slate-400">If off, pose skeleton and joints are hidden on webcam overlays.</span>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={showSkeletonOverlay}
+                            onChange={(e) => setShowSkeletonOverlay(e.target.checked)}
+                            className="mt-1 h-5 w-5 accent-blue-400"
+                        />
+                    </label>
+
                 </div>
 
             </div>

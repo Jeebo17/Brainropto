@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { TileType } from '../types/Types';
 
 const LOCKED_YOUTUBE_PARAMS =

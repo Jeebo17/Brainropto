@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext';
 import dogImage from '../assets/dog.png';
 import catImage from '../assets/cat.jpg';
 import shushImage from '../assets/shush.png';
+import sigmaImage from '../assets/ermwhatthesigma.png';
 
 interface WebCamMotionTrackerProps {
   small?: boolean;
@@ -16,7 +17,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const handsOnHeadPlayedRef = useRef(false);
   const cookedDogAudioRef = useRef<HTMLAudioElement | null>(null);
   const wakeUpAudioRef = useRef<HTMLAudioElement | null>(null);
-  const { wakeUpDelay, showImagePopups, muteAlertSounds } = useSettings();
+  const { wakeUpDelay, showImagePopups, muteAlertSounds, showSkeletonOverlay } = useSettings();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
@@ -30,6 +31,14 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
   const [showShushOverlay, setShowShushOverlay] = useState(false);
   const mouthWideOpenRef = useRef(false);
   const shushDetectedRef = useRef(false);
+  // Sigma overlay state
+  const [showSigmaOverlay, setShowSigmaOverlay] = useState(false);
+  const sigmaDetectedRef = useRef(false);
+  const sigmaStartRef = useRef<number | null>(null);
+  const sigmaAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Add timers for gesture hold
+  const shushStartRef = useRef<number | null>(null);
+  const mouthOpenStartRef = useRef<number | null>(null);
 
   // Track eyes closed state and timer
   const eyesClosedRef = useRef(false);
@@ -185,35 +194,37 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
       // Face mesh
       let eyesClosed = false;
       let mouthWideOpen = false;
+      const now = Date.now();
       const faceResult = faceLandmarker.detectForVideo(video, performance.now());
       if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
         for (const face of faceResult.faceLandmarks) {
-          ctx.strokeStyle = '#60a5fa';
-          ctx.lineWidth = 2;
-          // Draw points (mirrored)
-          for (const pt of face) {
-            ctx.beginPath();
-            ctx.arc((canvas.width - pt.x * canvas.width), pt.y * canvas.height, 2, 0, 2 * Math.PI);
-            ctx.fillStyle = '#60a5fa';
-            ctx.fill();
-          }
-          // Draw mesh lines (mirrored)
-          const connections = [
-            [10, 338], [338, 297], [297, 332], [332, 284], [284, 251], [251, 389], [389, 356], [356, 454], [454, 323], [323, 361], [361, 288], [288, 397], [397, 365], [365, 379], [379, 378], [378, 400], [400, 377], [377, 152], [152, 148], [148, 176], [176, 149], [149, 150], [150, 136], [136, 172], [172, 58], [58, 132], [132, 93], [93, 234], [234, 127], [127, 162], [162, 21], [21, 54], [54, 103], [103, 67], [67, 109], [109, 10]
-          ];
-          ctx.strokeStyle = '#60a5fa';
-          ctx.lineWidth = 1.5;
-          ctx.globalAlpha = 0.7;
-          for (const [a, b] of connections) {
-            if (face[a] && face[b]) {
+          if (showSkeletonOverlay) {
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 2;
+            // Draw points (mirrored)
+            for (const pt of face) {
               ctx.beginPath();
-              ctx.moveTo((canvas.width - face[a].x * canvas.width), face[a].y * canvas.height);
-              ctx.lineTo((canvas.width - face[b].x * canvas.width), face[b].y * canvas.height);
-              ctx.stroke();
+              ctx.arc((canvas.width - pt.x * canvas.width), pt.y * canvas.height, 2, 0, 2 * Math.PI);
+              ctx.fillStyle = '#60a5fa';
+              ctx.fill();
             }
+            // Draw mesh lines (mirrored)
+            const connections = [
+              [10, 338], [338, 297], [297, 332], [332, 284], [284, 251], [251, 389], [389, 356], [356, 454], [454, 323], [323, 361], [361, 288], [288, 397], [397, 365], [365, 379], [379, 378], [378, 400], [400, 377], [377, 152], [152, 148], [148, 176], [176, 149], [149, 150], [150, 136], [136, 172], [172, 58], [58, 132], [132, 93], [93, 234], [234, 127], [127, 162], [162, 21], [21, 54], [54, 103], [103, 67], [67, 109], [109, 10]
+            ];
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.7;
+            for (const [a, b] of connections) {
+              if (face[a] && face[b]) {
+                ctx.beginPath();
+                ctx.moveTo((canvas.width - face[a].x * canvas.width), face[a].y * canvas.height);
+                ctx.lineTo((canvas.width - face[b].x * canvas.width), face[b].y * canvas.height);
+                ctx.stroke();
+              }
+            }
+            ctx.globalAlpha = 1.0;
           }
-          ctx.globalAlpha = 1.0;
-
           // Eye closed detection (using eye aspect ratio)
           // Left eye: [33, 160, 158, 133, 153, 144], Right eye: [362, 385, 387, 263, 373, 380]
           function eyeAspectRatio(eyeIdx: number[]) {
@@ -243,12 +254,25 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
         }
       }
 
-      if (mouthWideOpen !== mouthWideOpenRef.current) {
-        mouthWideOpenRef.current = mouthWideOpen;
-        setShowCatOverlay(showImagePopups && mouthWideOpen);
+      // Add 1s delay for mouth open
+      if (mouthWideOpen) {
+        if (!mouthOpenStartRef.current) {
+          mouthOpenStartRef.current = now;
+        }
+        if (now - (mouthOpenStartRef.current || 0) >= 1000) {
+          if (!mouthWideOpenRef.current) {
+            mouthWideOpenRef.current = true;
+            setShowCatOverlay(showImagePopups && true);
+          }
+        }
+      } else {
+        mouthOpenStartRef.current = null;
+        if (mouthWideOpenRef.current) {
+          mouthWideOpenRef.current = false;
+          setShowCatOverlay(false);
+        }
       }
       // Eyes closed delay logic
-      const now = Date.now();
       if (eyesClosed) {
         if (!eyesClosedRef.current) {
           eyesClosedStartRef.current = now;
@@ -291,8 +315,9 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
       const handResult = handLandmarker.detectForVideo(video, performance.now());
       let handsOnHead = false;
       let shushDetected = false;
+      let sigmaDetected = false;
 
-      // Shush detection: index fingertip close to mouth center.
+      // Shush and Sigma detection: index fingertip close to mouth center (shush), or index up and far from face (sigma)
       if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0 && handResult.landmarks && handResult.landmarks.length > 0) {
         const face = faceResult.faceLandmarks[0];
         const mouthCenter = {
@@ -300,21 +325,89 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
           y: (face[13].y + face[14].y) / 2,
         };
         const mouthWidth = Math.hypot(face[78].x - face[308].x, face[78].y - face[308].y);
-        const shushThreshold = mouthWidth * 0.55;
+        const shushThreshold = mouthWidth * 0.72;
+        const sigmaThreshold = mouthWidth * 1.5; // must be much farther than shush
 
         for (const hand of handResult.landmarks) {
           const indexTip = hand[8];
-          const distToMouth = Math.hypot(indexTip.x - mouthCenter.x, indexTip.y - mouthCenter.y);
-          if (distToMouth < shushThreshold) {
+          const indexDip = hand[7];
+          const indexPip = hand[6];
+          const indexMcp = hand[5]; // base of index finger
+          const distToMouthTip = Math.hypot(indexTip.x - mouthCenter.x, indexTip.y - mouthCenter.y);
+          const distToMouthDip = Math.hypot(indexDip.x - mouthCenter.x, indexDip.y - mouthCenter.y);
+          const distToMouthPip = Math.hypot(indexPip.x - mouthCenter.x, indexPip.y - mouthCenter.y);
+          const minIndexDistToMouth = Math.min(distToMouthTip, distToMouthDip, distToMouthPip);
+          // Shush: index tip close to mouth
+          if (minIndexDistToMouth < shushThreshold) {
             shushDetected = true;
             break;
+          }
+          // Sigma: index up, far from face
+          // Check if index is up (y of tip < y of mcp, and index is straighter than middle)
+          const indexUp = (indexTip.y < indexMcp.y) && (Math.abs(indexTip.x - indexMcp.x) < 0.07);
+          if (indexUp && distToMouthTip > sigmaThreshold) {
+            sigmaDetected = true;
+          }
+        }
+      }
+      // Sigma overlay logic (1s hold)
+      if (sigmaDetected) {
+        if (!sigmaStartRef.current) {
+          sigmaStartRef.current = now;
+        }
+        if (now - (sigmaStartRef.current || 0) >= 1000) {
+          if (!sigmaDetectedRef.current) {
+            sigmaDetectedRef.current = true;
+            setShowSigmaOverlay(showImagePopups && true);
+            // Play sigma audio
+            if (showImagePopups && !muteAlertSounds) {
+              const sigmaAudio = new Audio('/ermwhatthesigma.mp3');
+              sigmaAudioRef.current = sigmaAudio;
+              sigmaAudio.onended = () => {
+                if (sigmaAudioRef.current === sigmaAudio) {
+                  sigmaAudioRef.current = null;
+                }
+              };
+              sigmaAudio.play().catch(() => {
+                if (sigmaAudioRef.current === sigmaAudio) {
+                  sigmaAudioRef.current = null;
+                }
+              });
+            }
+          }
+        }
+      } else {
+        sigmaStartRef.current = null;
+        if (sigmaDetectedRef.current) {
+          sigmaDetectedRef.current = false;
+          setShowSigmaOverlay(false);
+          // Stop sigma audio
+          if (sigmaAudioRef.current) {
+            sigmaAudioRef.current.onended = null;
+            sigmaAudioRef.current.pause();
+            sigmaAudioRef.current.currentTime = 0;
+            sigmaAudioRef.current = null;
           }
         }
       }
 
-      if (shushDetected !== shushDetectedRef.current) {
-        shushDetectedRef.current = shushDetected;
-        setShowShushOverlay(showImagePopups && shushDetected);
+      // Add 1s delay for shush
+      if (shushDetected) {
+        if (!shushStartRef.current) {
+          shushStartRef.current = now;
+        }
+        if (now - (shushStartRef.current || 0) >= 1000) {
+          if (!shushDetectedRef.current) {
+            shushDetectedRef.current = true;
+            setShowShushOverlay(showImagePopups && true);
+          }
+        }
+      } else {
+        shushStartRef.current = null;
+        if (shushDetectedRef.current) {
+          shushDetectedRef.current = false;
+          setShowShushOverlay(false);
+        }
       }
 
       // Use face landmarks for head, hand landmarks for hands
@@ -391,7 +484,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
 
       // Pose skeleton
       const poseResult = poseLandmarker.detectForVideo(video, performance.now());
-      if (poseResult.landmarks && poseResult.landmarks.length > 0) {
+      if (poseResult.landmarks && poseResult.landmarks.length > 0 && showSkeletonOverlay) {
         for (const pose of poseResult.landmarks) {
           // Draw all 33 pose landmarks (mirrored)
           for (const point of pose) {
@@ -469,7 +562,7 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
     };
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [isRunning, modelReady, wakeUpDelay, showImagePopups, muteAlertSounds]);
+  }, [isRunning, modelReady, wakeUpDelay, showImagePopups, muteAlertSounds, showSkeletonOverlay]);
 
 
 
@@ -508,6 +601,12 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
               alt="Shush"
               className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-[45]"
               style={{ opacity: showShushOverlay ? 1 : 0, transition: 'opacity 2s' }}
+            />
+            <img
+              src={sigmaImage}
+              alt="Sigma Erm What The"
+              className="fixed inset-0 w-screen h-screen object-contain pointer-events-none transition-opacity z-[46]"
+              style={{ opacity: showSigmaOverlay ? 1 : 0, transition: 'opacity 2s' }}
             />
           </>
         )}

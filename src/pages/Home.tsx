@@ -180,6 +180,7 @@ export function Home() {
     const handleGesture = useCallback((gesture: '67' | 'rickroll') => {
         if (gesture === '67' && show67Text) {
             setShow67Indicator(true);
+            new Audio('/67.mp3').play().then(audio => audio).catch(() => {});
 
             if (gesture67TimeoutRef.current) {
                 clearTimeout(gesture67TimeoutRef.current);
@@ -191,6 +192,7 @@ export function Home() {
         }
         if (gesture === 'rickroll' && showRickrollText) {
             setShowRickrollIndicator(true);
+            new Audio('/never-gonna-give-you-up.mp3').play().then(audio => audio).catch(() => {});
 
             if (rickrollTimeoutRef.current) {
                 clearTimeout(rickrollTimeoutRef.current);
