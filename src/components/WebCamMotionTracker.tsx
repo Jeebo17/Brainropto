@@ -325,23 +325,27 @@ export function WebCamMotionTracker({ small }: WebCamMotionTrackerProps) {
           y: (face[13].y + face[14].y) / 2,
         };
         const mouthWidth = Math.hypot(face[78].x - face[308].x, face[78].y - face[308].y);
-        const shushThreshold = mouthWidth * 0.55;
+        const shushThreshold = mouthWidth * 0.72;
         const sigmaThreshold = mouthWidth * 1.5; // must be much farther than shush
 
         for (const hand of handResult.landmarks) {
           const indexTip = hand[8];
+          const indexDip = hand[7];
+          const indexPip = hand[6];
           const indexMcp = hand[5]; // base of index finger
-          const middleMcp = hand[9]; // base of middle finger
-          const distToMouth = Math.hypot(indexTip.x - mouthCenter.x, indexTip.y - mouthCenter.y);
+          const distToMouthTip = Math.hypot(indexTip.x - mouthCenter.x, indexTip.y - mouthCenter.y);
+          const distToMouthDip = Math.hypot(indexDip.x - mouthCenter.x, indexDip.y - mouthCenter.y);
+          const distToMouthPip = Math.hypot(indexPip.x - mouthCenter.x, indexPip.y - mouthCenter.y);
+          const minIndexDistToMouth = Math.min(distToMouthTip, distToMouthDip, distToMouthPip);
           // Shush: index tip close to mouth
-          if (distToMouth < shushThreshold) {
+          if (minIndexDistToMouth < shushThreshold) {
             shushDetected = true;
             break;
           }
           // Sigma: index up, far from face
           // Check if index is up (y of tip < y of mcp, and index is straighter than middle)
           const indexUp = (indexTip.y < indexMcp.y) && (Math.abs(indexTip.x - indexMcp.x) < 0.07);
-          if (indexUp && distToMouth > sigmaThreshold) {
+          if (indexUp && distToMouthTip > sigmaThreshold) {
             sigmaDetected = true;
           }
         }
