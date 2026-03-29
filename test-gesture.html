@@ -27,7 +27,8 @@
     }
     #debug { font-size: 14px; color: #999; margin-top: 12px; }
     .container { display: flex; gap: 20px; flex-wrap: wrap; }
-    .panel { background: #2a2a2a; padding: 16px; border-radius: 8px; position: relative; display: inline-block; }
+    .panel { background: #2a2a2a; padding: 16px; border-radius: 8px; display: inline-block; }
+    .video-wrap { position: relative; display: inline-block; }
   </style>
 </head>
 <body>
@@ -41,8 +42,10 @@
   <div class="container">
     <div class="panel">
       <h3>Webcam Feed + Pose Overlay</h3>
-      <video id="webcam" width="640" height="480" autoplay muted playsinline></video>
-      <canvas id="overlay" width="640" height="480" style="position: absolute; top: 40px; left: 16px; pointer-events: none;"></canvas>
+      <div class="video-wrap">
+        <video id="webcam" width="640" height="480" autoplay muted playsinline></video>
+        <canvas id="overlay" width="640" height="480" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+      </div>
     </div>
   </div>
 
@@ -67,13 +70,15 @@
     const RIGHT_WRIST = 16;
 
     // -- Gesture detection config --
-    const GESTURE_WINDOW_MS = 5000;
+    const GESTURE_WINDOW_MS = 3000;
     const MIN_DISPLACEMENT_Y_RATIO = 0.15; // proportion of torso height
     const MIN_DISPLACEMENT_X_RATIO = 0.10;
     const MIN_DISPLACEMENT_Y_FALLBACK = 0.10;
     const MIN_DISPLACEMENT_X_FALLBACK = 0.08;
     const REQUIRED_REVERSALS = 4;
     const COOLDOWN_MS = 3000;
+    const MIN_ABOVE_HIP_RATIO = 0.6;
+    const HIP_MARGIN_RATIO = 0.1;
 
     const LEFT_SHOULDER = 11, RIGHT_SHOULDER = 12, LEFT_HIP = 23, RIGHT_HIP = 24;
 
@@ -97,6 +102,15 @@
         lastAnchor = values[i];
       }
       return reversals;
+    }
+
+    function checkBelowShoulderRatio(history, torsoHeight) {
+      if (history.length < 3) return false;
+      const margin = torsoHeight > 0.01 ? torsoHeight * HIP_MARGIN_RATIO : 0.02;
+      const belowCount = history.filter(p =>
+        p.shoulderMidY !== undefined && p.y >= p.shoulderMidY - margin
+      ).length;
+      return belowCount / history.length >= MIN_ABOVE_HIP_RATIO;
     }
 
     function addLog(msg) {
@@ -127,7 +141,7 @@
         const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task',
+              'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
@@ -229,7 +243,7 @@
       const sortedWrists = [...wrists].sort((a, b) => a.x - b.x);
       sortedWrists.forEach((wrist, i) => {
         const history = wristHistories[i];
-        history.push({ x: wrist.x, y: wrist.y, time: now });
+        history.push({ x: wrist.x, y: wrist.y, time: now, hipMidY, shoulderMidY });
         const cutoff = now - GESTURE_WINDOW_MS;
         while (history.length > 0 && history[0].time < cutoff) {
           history.shift();
@@ -262,7 +276,9 @@
 
       let is67 = false;
       let oppositeRatio = 0;
-      if (yRev0 >= REQUIRED_REVERSALS && yRev1 >= REQUIRED_REVERSALS) {
+      if (yRev0 >= REQUIRED_REVERSALS && yRev1 >= REQUIRED_REVERSALS
+        && checkBelowShoulderRatio(wristHistories[0], torsoHeight)
+        && checkBelowShoulderRatio(wristHistories[1], torsoHeight)) {
         const h0 = wristHistories[0];
         const h1 = wristHistories[1];
 

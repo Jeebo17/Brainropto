@@ -44,9 +44,9 @@ function buildEmbedUrl(input: string): { url: string; type: VideoType } | null {
 
 type GestureType = '67' | 'rickroll';
 
-type PositionEntry = { x: number; y: number; time: number };
+type PositionEntry = { x: number; y: number; time: number; shoulderMidY?: number };
 
-const GESTURE_WINDOW_MS = 5000; // 5 second window
+const GESTURE_WINDOW_MS = 3000; // 3 second window
 // Displacement thresholds as a proportion of torso height
 const MIN_DISPLACEMENT_Y_RATIO = 0.15; // 15% of torso height for 67 (up-down)
 const MIN_DISPLACEMENT_X_RATIO = 0.10; // 10% of torso height for rickroll (side-to-side)
@@ -55,6 +55,8 @@ const MIN_DISPLACEMENT_Y_FALLBACK = 0.10;
 const MIN_DISPLACEMENT_X_FALLBACK = 0.08;
 const REQUIRED_REVERSALS = 4; // 2 full pumps/sweeps = 4 direction changes
 const GESTURE_COOLDOWN_MS = 3000; // 3 seconds between same gesture events
+const MIN_BELOW_SHOULDER_RATIO = 0.6; // 60% of frames must have wrist below shoulder level
+const HIP_MARGIN_RATIO = 0.1; // 10% torso-height tolerance below hip line
 
 // Pose landmark indices
 const LEFT_SHOULDER = 11;
@@ -68,6 +70,16 @@ function computeTorsoHeight(pose: { x: number; y: number; z: number }[]): number
   const hipMidY = (pose[LEFT_HIP].y + pose[RIGHT_HIP].y) / 2;
   const height = Math.abs(hipMidY - shoulderMidY);
   return height > 0.01 ? height : null; // ignore if too small (bad detection)
+}
+
+// Check that a wrist was below shoulder level for enough of the gesture window
+function checkBelowShoulderRatio(history: PositionEntry[], torsoHeight: number | null): boolean {
+  const entries = history.filter(p => p.shoulderMidY !== undefined);
+  if (entries.length < 3) return false;
+  const margin = torsoHeight ? torsoHeight * HIP_MARGIN_RATIO : 0.02;
+  // Y=0 is top, Y=1 is bottom: wrist must be below shoulders
+  const belowCount = entries.filter(p => p.y >= p.shoulderMidY! - margin).length;
+  return belowCount / entries.length >= MIN_BELOW_SHOULDER_RATIO;
 }
 
 // Count direction reversals along one axis within a position history
@@ -105,7 +117,9 @@ function detectGesture(
     const yRev0 = countReversals(handHistories[0].map((p) => p.y), minDispY);
     const yRev1 = countReversals(handHistories[1].map((p) => p.y), minDispY);
 
-    if (yRev0 >= REQUIRED_REVERSALS && yRev1 >= REQUIRED_REVERSALS) {
+    if (yRev0 >= REQUIRED_REVERSALS && yRev1 >= REQUIRED_REVERSALS
+      && checkBelowShoulderRatio(handHistories[0], torsoHeight)
+      && checkBelowShoulderRatio(handHistories[1], torsoHeight)) {
       const h0 = handHistories[0];
       const h1 = handHistories[1];
 
@@ -353,7 +367,8 @@ export function WebcamDetector({ onGesture }: WebcamDetectorProps) {
     const sortedWrists = [...wrists].sort((a, b) => a.x - b.x);
     sortedWrists.forEach((wrist, slotIndex) => {
       const history = handHistoriesRef.current[slotIndex];
-      history.push({ x: wrist.x, y: wrist.y, time: now });
+      const shoulderMidY = (pose[LEFT_SHOULDER].y + pose[RIGHT_SHOULDER].y) / 2;
+      history.push({ x: wrist.x, y: wrist.y, time: now, shoulderMidY });
       const cutoff = now - GESTURE_WINDOW_MS;
       while (history.length > 0 && history[0].time < cutoff) {
         history.shift();
