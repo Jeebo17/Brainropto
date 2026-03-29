@@ -132,7 +132,7 @@ function App() {
             <h1 className="text-2xl font-bold text-slate-100">Brainropto</h1>
           </Link>
 
-          <nav className="flex gap-4 ml-auto">
+          <nav className="flex gap-8 ml-auto">
             <Link
               to="/"
               className="text-slate-200 hover:text-blue-300 font-medium transition-colors"
