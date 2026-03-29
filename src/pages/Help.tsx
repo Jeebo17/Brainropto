@@ -1,6 +1,3 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-
 export function Help() {
   return (
     <div className="w-full max-w-6xl mx-auto p-6">
