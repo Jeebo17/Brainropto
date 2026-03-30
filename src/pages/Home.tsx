@@ -363,7 +363,7 @@ export function Home() {
 
                 {gestureLog.length > 0 && (
                     <div
-                        className="absolute bottom-6 right-6 z-20 flex flex-col overflow-hidden rounded-lg border border-[#1a2d4a] bg-[#0a1933]/90 p-2 backdrop-blur-sm"
+                        className="absolute bottom-6 right-6 z-10 flex flex-col overflow-hidden rounded-lg border border-[#1a2d4a] bg-[#0a1933]/90 p-2 backdrop-blur-sm"
                         style={{ left: 'calc(50% + min(260px, 46vw) + 12px)', height: '130px' }}
                     >
                         <p className="mb-1 shrink-0 text-xs font-semibold text-slate-300">Gesture Log</p>
