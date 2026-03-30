@@ -50,6 +50,10 @@ createRoot(document.getElementById('root')!).render(
         <GlobalPipeSound />
         <BrowserRouter>
           <App />
+
+          <p className="text-sm text-slate-400 opacity-30 fixed left-1/2 -translate-x-1/2 bottom-1">
+            © 2026 Octopodes. All rights reserved | Nathan W, Oliver CB & Amy P
+          </p>
         </BrowserRouter>
       </SettingsProvider>
     </StrictMode>

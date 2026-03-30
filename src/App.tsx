@@ -132,10 +132,6 @@ function App() {
             <h1 className="text-2xl font-bold text-slate-100">Brainropto</h1>
           </Link>
 
-          <p className="text-sm text-slate-400 opacity-30 absolute left-1/2 -translate-x-1/2 bottom-1">
-            © 2026 Octopodes. All rights reserved | Nathan W, Oliver CB & Amy P
-          </p>
-
           <nav className="flex gap-8 ml-auto">
             <Link
               to="/"
