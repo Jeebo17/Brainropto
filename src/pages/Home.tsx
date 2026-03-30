@@ -205,7 +205,12 @@ export function Home() {
     }, [show67Text, showRickrollText]);
 
     const handleGestureLog = useCallback((entry: GestureLogEntry) => {
-        setGestureLog(prev => [...prev, entry].sort((a, b) => a.timestamp - b.timestamp));
+        setGestureLog(prev => {
+            if (prev.some(e => e.gesture === entry.gesture && Math.abs(e.timestamp - entry.timestamp) < 1)) {
+                return prev;
+            }
+            return [...prev, entry].sort((a, b) => a.timestamp - b.timestamp);
+        });
     }, []);
 
     const handleSeekTo = useCallback((seconds: number) => {
