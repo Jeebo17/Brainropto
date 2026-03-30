@@ -10,7 +10,6 @@ function isDesktop() {
   const ua = navigator.userAgent;
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
   const isSmallScreen = window.innerWidth < 900 || window.innerHeight < 600;
-  // Optionally, add more checks for OS/platform if needed
   return !isMobile && !isSmallScreen;
 }
 
