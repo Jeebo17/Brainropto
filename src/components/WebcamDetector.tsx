@@ -58,7 +58,8 @@ const MIN_DISPLACEMENT_X_RATIO = 0.20; // 20% of torso height for rickroll (side
 // Fallbacks if torso can't be measured
 const MIN_DISPLACEMENT_Y_FALLBACK = 0.10;
 const MIN_DISPLACEMENT_X_FALLBACK = 0.08;
-const REQUIRED_REVERSALS = 4; // 2 full pumps/sweeps = 4 direction changes
+const REQUIRED_REVERSALS = 4; // 2 full pumps = 4 direction changes
+const REQUIRED_REVERSALS_RICKROLL = 3; // 1.5 full sweeps = 3 direction changes
 const GESTURE_COOLDOWN_MS = 3000; // 3 seconds between same gesture events
 const MIN_BELOW_SHOULDER_RATIO = 0.6; // 60% of frames must have wrist below shoulder level
 const HIP_MARGIN_RATIO = 0.1; // 10% torso-height tolerance below hip line
@@ -185,7 +186,7 @@ function detectGesture(
       const bothHaveSweeps = handHistories.slice(0, 2).every((history) => {
         if (history.length < 3) return false;
         const xValues = history.map((p) => p.bodyCenterX !== undefined ? p.x - p.bodyCenterX : p.x);
-        return countReversals(xValues, minDispX) >= REQUIRED_REVERSALS;
+        return countReversals(xValues, minDispX) >= REQUIRED_REVERSALS_RICKROLL;
       });
       if (bothHaveSweeps) return 'rickroll';
     }
