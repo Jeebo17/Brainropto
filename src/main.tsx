@@ -5,6 +5,7 @@ import App from './App.tsx';
 import { GlobalPipeSound } from './components/GlobalPipeSound.tsx';
 import { SettingsProvider } from './context/SettingsContext.tsx';
 import './index.css';
+import { Analytics } from "@vercel/analytics/next"
 
 function isDesktop() {
   const ua = navigator.userAgent;
@@ -49,7 +50,7 @@ createRoot(document.getElementById('root')!).render(
         <GlobalPipeSound />
         <BrowserRouter>
           <App />
-
+          <Analytics />
           <p className="text-sm text-slate-400 opacity-30 fixed left-1/2 -translate-x-1/2 bottom-1">
             © 2026 Octopodes. All rights reserved | Nathan W, Oliver CB & Amy P
           </p>
